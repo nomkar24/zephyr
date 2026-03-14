@@ -83,23 +83,12 @@ MEMORY
   irom0_0_seg(RX): org = IROM_SEG_ORG, len = IROM_SEG_LEN
   drom0_0_seg(R):  org = DROM_SEG_ORG, len = DROM_SEG_LEN
 
-#if CONFIG_ULP_COPROC_ENABLED
-  lp_ram_seg(RW):  org = LPSRAM_IRAM_START + ULP_COPROC_RESERVE_MEM,
-                   len = LPSRAM_SIZE - ULP_COPROC_RESERVE_MEM - CONFIG_RESERVE_RTC_MEM
+#if CONFIG_ESP32_ULP_COPROC_ENABLED
+  lp_ram_seg(RW):  org = LPSRAM_RTC_START,
+                   len = LPSRAM_RTC_SIZE
 #else
   lp_ram_seg(RW):  org = LPSRAM_IRAM_START,
-                   len = LPSRAM_SIZE - CONFIG_RESERVE_RTC_MEM
-#endif
-  /* We reduced the size of lp_ram_seg by CONFIG_RESERVE_RTC_MEM value.
-     It reserves the amount of LP memory that we use for this memory segment.
-     This segment is intended for keeping:
-       - (lower addr) rtc timer data (s_rtc_timer_retain_mem, see esp_clk.c files).
-       - (higher addr) bootloader rtc data (s_bootloader_retain_mem, when a Kconfig option is on).
-     The aim of this is to keep data that will not be moved around and have a fixed address.
-  */
-#if (CONFIG_RESERVE_RTC_MEM > 0)
-  lp_reserved_seg(RW): org = LPSRAM_IRAM_START + LPSRAM_SIZE - CONFIG_RESERVE_RTC_MEM,
-                       len = CONFIG_RESERVE_RTC_MEM
+                   len = LPSRAM_RTC_START + LPSRAM_RTC_SIZE - LPSRAM_IRAM_START
 #endif
 
 #ifdef CONFIG_GEN_ISR_TABLES
@@ -278,15 +267,14 @@ SECTIONS
    * This section holds RTC data that should have fixed addresses.
    * The data are not initialized at power-up and are retained during deep sleep.
    */
-#if (CONFIG_RESERVE_RTC_MEM > 0)
   .rtc_reserved (NOLOAD) :
   {
     . = ALIGN(4);
     _rtc_reserved_start = ABSOLUTE(.);
     *(.rtc_timer_data_in_rtc_mem .rtc_timer_data_in_rtc_mem.*)
     _rtc_reserved_end = ABSOLUTE(.);
-  } GROUP_LINK_IN(lp_reserved_seg)
-#endif
+  } GROUP_LINK_IN(rtc_slow_seg)
+  _rtc_reserved_length = (_rtc_reserved_end - _rtc_reserved_start);
 
   /* Get size of rtc slow data based on rtc_data_location alias */
   _rtc_slow_length = (_rtc_force_slow_end - _rtc_data_start);
@@ -393,6 +381,8 @@ SECTIONS
     *libzephyr.a:flash_brownout_hook.*(.literal .literal.* .text .text.*)
     *libzephyr.a:spi_flash_wrap.*(.literal .literal.* .text .text.*)
     *libzephyr.a:flash_ops.*(.literal .literal.* .text .text.*)
+    *libzephyr.a:spi_flash_os_func_app.*(.literal .literal.* .text .text.*)
+    *libzephyr.a:spi_flash_os_func_noos.*(.literal .literal.* .text .text.*)
     *libzephyr.a:flash_mmap.*(.literal .text .literal.* .text.*)
     *libzephyr.a:esp_flash_api.*(.literal .text .literal.* .text.*)
 
@@ -436,7 +426,8 @@ SECTIONS
     *libzephyr.a:esp_rom_hp_regi2c_esp32c6.*(.literal .literal.* .text .text.*)
 
     /* [mapping:esp_mm] */
-    *libzephyr.a:esp_cache.*(.literal .literal.* .text .text.*)
+    *libzephyr.a:esp_cache_utils.*(.literal .literal.* .text .text.*)
+    *libzephyr.a:esp_cache_msync.*(.literal .literal.* .text .text.*)
     *libzephyr.a:cache_utils.*(.literal .text .literal.* .text.*)
 
 #if defined(CONFIG_ESP32_WIFI_IRAM_OPT)
@@ -459,6 +450,8 @@ SECTIONS
     *libpp.a:( .wifirxiram  .wifirxiram.* .wifislprxiram .wifislprxiram.*)
 #endif /* CONFIG_ESP32_WIFI_RX_IRAM_OPT */
 
+  *libbtbb.a:(.iram1 .iram1.*)
+  *libbtbb.a:(.high_perf_code_iram1 .high_perf_code_iram1.*)
   *libble_app.a:(.high_perf_code_iram1 .high_perf_code_iram1.*)
   *libble_app.a:(.bt_iram_text .bt_iram_text.*)
 
@@ -622,11 +615,14 @@ SECTIONS
     *libzephyr.a:spi_flash_wrap.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:flash_ops.*(.rodata .rodata.* .sdata2 .sdata2.* .srodata .srodata.*)
     *libzephyr.a:flash_qio_mode.*(.rodata .rodata.* .srodata .srodata.*)
+    *libzephyr.a:spi_flash_os_func_app.*(.rodata .rodata.* .srodata .srodata.*)
+    *libzephyr.a:spi_flash_os_func_noos.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:flash_mmap.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:esp_flash_api.*(.rodata .rodata.* .srodata .srodata.*)
 
     /* [mapping:esp_mm] */
-    *libzephyr.a:esp_cache.*(.rodata .rodata.* .srodata .srodata.*)
+    *libzephyr.a:esp_cache_utils.*(.rodata .rodata.* .srodata .srodata.*)
+    *libzephyr.a:esp_cache_msync.*(.rodata .rodata.* .srodata .srodata.*)
 
     /* [mapping:esp_hw_support] */
     *(.rodata.esp_cpu_stall)
@@ -832,6 +828,7 @@ SECTIONS
     *libpp.a:( .wifirxiram  .wifirxiram.* .wifislprxiram .wifislprxiram.*)
 #endif /* CONFIG_ESP32_WIFI_RX_IRAM_OPT */
 
+    *(.adv_fast_execute_code_iram1 .adv_fast_execute_code_iram1.*)
     *(.literal .text .literal.* .text.*)
     *(.stub .gnu.warning .gnu.linkonce.literal.* .gnu.linkonce.t.*.literal .gnu.linkonce.t.*)
     *(.irom0.text) /* catch stray ICACHE_RODATA_ATTR */

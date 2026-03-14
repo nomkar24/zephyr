@@ -690,11 +690,11 @@ Bluetooth ISO:
 Bluetooth Mesh:
   status: maintained
   maintainers:
-    - PavelVPV
+    - alxelax
   collaborators:
     - jhedberg
+    - PavelVPV
     - LingaoM
-    - alxelax
     - akredalen
     - HaavardRei
     - omkar3141
@@ -777,6 +777,7 @@ Bouffalolab Platforms:
     - VynDragon
   collaborators:
     - josuah
+    - will-tm
   files:
     - boards/aithinker/ai_*/
     - boards/bflb/
@@ -2172,7 +2173,6 @@ Documentation Infrastructure:
     - dts/bindings/opamp/
     - drivers/opamp/
     - include/zephyr/drivers/opamp.h
-    - include/zephyr/dt-bindings/opamp/
     - samples/drivers/opamp/
     - tests/drivers/build_all/opamp/
     - tests/drivers/opamp/
@@ -2506,7 +2506,6 @@ Documentation Infrastructure:
   files:
     - drivers/stepper/
     - include/zephyr/drivers/stepper/
-    - include/zephyr/drivers/stepper.h
     - dts/bindings/stepper/
     - doc/hardware/peripherals/stepper/
     - samples/drivers/stepper/
@@ -2683,7 +2682,7 @@ Documentation Infrastructure:
     - dts/bindings/wifi/nordic,nrf7001-qspi.yaml
     - dts/bindings/wifi/nordic,nrf7001-spi.yaml
     - dts/bindings/wifi/nordic,nrf7120-wifi.yaml
-    - boards/shields/nrf7002ek/
+    - boards/shields/nrf7002e*/
   labels:
     - "area: Wi-Fi"
 
@@ -3581,12 +3580,12 @@ NVMEM:
 NXP Platform Drivers:
   status: maintained
   maintainers:
+    - zejiang0jason
     - mmahadevan108
   collaborators:
     - manuargue
     - dbaluta
     - Holt-Sun
-    - zejiang0jason
     - butok
   files-regex:
     - ^drivers/.*nxp.*
@@ -3617,7 +3616,6 @@ NXP Platform Drivers:
   file-groups:
     - name: NXP USB
       collaborators:
-        - mmahadevan108
         - MarkWangChinese
       files:
         - drivers/usb/
@@ -3628,7 +3626,7 @@ NXP Platform Drivers:
 NXP Platform Wireless:
   status: maintained
   maintainers:
-    - mmahadevan108
+    - axelnxp
   files:
     - boards/nxp/*mcxw*/
     - boards/nxp/*rw*/
@@ -3646,7 +3644,6 @@ NXP Platform Wireless:
   file-groups:
     - name: NXP BLE
       collaborators:
-        - axelnxp
         - yeaissa
       files:
         - drivers/bluetooth/
@@ -3667,7 +3664,6 @@ NXP Platform Wireless:
         - soc/
     - name: MCXW platform
       collaborators:
-        - axelnxp
         - yeaissa
       files:
         - boards/nxp/*mcxw*/
@@ -3675,7 +3671,6 @@ NXP Platform Wireless:
     - name: RW6xx platform
       collaborators:
         - MaochenWang1
-        - axelnxp
         - yeaissa
       files:
         - soc/nxp/rw/
@@ -3686,10 +3681,10 @@ NXP Platform Wireless:
 NXP Platforms (MCU):
   status: maintained
   maintainers:
+    - iuliana-prodan
     - mmahadevan108
   collaborators:
     - butok
-    - DerekSnell
   files:
     - boards/nxp/mimxrt*/
     - boards/nxp/frdm*/
@@ -3760,7 +3755,6 @@ NXP Platforms (MCU):
         - soc/nxp/imxrt/imxrt[567]xx/Kconfig*
     - name: NXP MCU UX
       collaborators:
-        - DerekSnell
         - jacob-wienecke-nxp
       files-regex:
         - \.rst$
@@ -3920,7 +3914,6 @@ Networking:
     - jukkar
   collaborators:
     - pdgendt
-    - ssharks
   files:
     - scripts/net/
     - drivers/net/
@@ -3937,20 +3930,28 @@ Networking:
     - doc/connectivity/networking/api/ptp.rst
     - doc/connectivity/networking/api/wifi.rst
     - doc/connectivity/networking/api/http*.rst
+    - doc/connectivity/networking/api/ethernet*.rst
+    - doc/connectivity/networking/api/lldp.rst
+    - doc/connectivity/networking/api/vlan.rst
+    - doc/connectivity/networking/dsa*
+    - doc/connectivity/networking/eth_*.rst
     - include/zephyr/net/gptp.h
     - include/zephyr/net/ieee802154*.h
     - include/zephyr/net/ptp.h
     - include/zephyr/net/wifi*.h
     - include/zephyr/net/dhcpv4*.h
     - include/zephyr/net/http/
-    - samples/net/ethernet/gptp/
+    - include/zephyr/net/ethernet*.h
+    - include/zephyr/net/dsa*.h
+    - include/zephyr/net/lldp.h
+    - samples/net/ethernet/
     - samples/net/sockets/coap_*/
     - samples/net/sockets/*http*/
     - samples/net/lwm2m_client/
     - samples/net/ocpp/
     - samples/net/wifi/
     - samples/net/dhcpv4_client/
-    - subsys/net/l2/ethernet/gptp/
+    - subsys/net/l2/ethernet/
     - subsys/net/l2/ieee802154/
     - subsys/net/l2/wifi/
     - subsys/net/lib/coap/
@@ -3966,6 +3967,10 @@ Networking:
     - tests/net/lib/ocpp/
     - tests/net/lib/http*/
     - tests/net/wifi/
+    - tests/net/arp/
+    - tests/net/bridge/
+    - tests/net/ethernet_mgmt/
+    - tests/net/vlan/
   labels:
     - "area: Networking"
   tests:
@@ -4072,6 +4077,39 @@ Networking:
     - "area: DSA"
   tests:
     - sample.net.dsa
+
+"Networking: Ethernet":
+  status: maintained
+  maintainers:
+    - rlubos
+    - jukkar
+  collaborators:
+    - maass-hamburg
+    - yangbolu1991
+    - pdgendt
+  files:
+    - subsys/net/l2/ethernet/
+    - include/zephyr/net/ethernet*.h
+    - include/zephyr/net/lldp.h
+    - samples/net/ethernet/
+    - tests/net/arp/
+    - tests/net/bridge/
+    - tests/net/ethernet_mgmt/
+    - tests/net/vlan/
+    - doc/connectivity/networking/api/ethernet*.rst
+    - doc/connectivity/networking/api/lldp.rst
+    - doc/connectivity/networking/api/vlan.rst
+    - doc/connectivity/networking/eth_*.rst
+  files-exclude:
+    - subsys/net/l2/ethernet/dsa/
+    - subsys/net/l2/ethernet/gptp/
+    - samples/net/ethernet/dsa/
+    - samples/net/ethernet/gptp/
+  labels:
+    - "area: Networking"
+    - "area: Ethernet"
+  tests:
+    - sample.net.ethernet
 
 "Networking: HTTP":
   status: maintained
@@ -4434,6 +4472,8 @@ Power management:
     - teburd
     - tmleman
     - JordanYates
+    - ZhaoxiangJin
+    - yongxu-wang15
   files:
     - include/zephyr/pm/
     - samples/subsys/pm/
@@ -4567,6 +4607,7 @@ Raspberry Pi Pico Platforms:
     - boards/adafruit/qt_py_rp2040/
     - boards/pimoroni/pico_plus2/
     - boards/seeed/xiao_rp2040/
+    - boards/seeed/xiao_rp2350/
     - boards/sparkfun/pro_micro_rp2040/
     - boards/sparkfun/rp2040_mikrobus/
     - boards/waveshare/rp2040_zero/
@@ -4593,7 +4634,23 @@ Realtek Ameba Platforms:
     - dts/arm/realtek/ameba*/
     - dts/bindings/*/*ameba*
   labels:
-    - "platform: Ameba"
+    - "platform: Realtek Ameba"
+
+Realtek Bee Platforms:
+  status: maintained
+  maintainers:
+    - ZhiyuanTang17
+  files:
+    - boards/realtek/rtl87x2g*/
+    - boards/realtek/rtl8752h*/
+    - drivers/*/*bee*
+    - dts/arm/realtek/bee/
+    - dts/bindings/*/*bee*
+    - soc/realtek/bee/
+    - tests/boards/realtek/
+    - modules/hal_realtek/bee/
+  labels:
+    - "platform: Realtek Bee"
 
 Realtek EC Platforms:
   status: maintained
@@ -4612,6 +4669,19 @@ Realtek EC Platforms:
     - soc/realtek/ec/
   labels:
     - "platform: Realtek EC"
+
+Realtek Fingerprint Platforms:
+  status: maintained
+  maintainers:
+    - RtkFP
+  files:
+    - boards/realtek/rts5817_maa_evb/
+    - drivers/*/*rts5817*
+    - dts/bindings/*/*rts5817*
+    - dts/arm/realtek/fingerprint/
+    - soc/realtek/fingerprint/
+  labels:
+    - "platform: Realtek Fingerprint"
 
 Release:
   status: maintained
@@ -4677,7 +4747,7 @@ Renesas RA Platforms:
   files:
     - boards/arduino/uno_r4/
     - boards/renesas/*ra*/
-    - drivers/*/*renesas_ra*
+    - drivers/**/*renesas_ra*
     - drivers/pinctrl/renesas/ra/
     - dts/arm/renesas/ra/
     - dts/bindings/*/*renesas,ra*
@@ -5571,7 +5641,9 @@ VFS:
     - filesystem
 
 WCH Platforms:
-  status: odd fixes
+  status: maintained
+  maintainers:
+    - BOJIT
   collaborators:
     - nzmichaelh
     - kholia
@@ -5838,6 +5910,7 @@ West:
     - VynDragon
   collaborators:
     - josuah
+    - will-tm
   files:
     - modules/hal_bouffalolab/
   labels:
@@ -5973,8 +6046,8 @@ West:
 "West project: hal_nxp":
   status: maintained
   maintainers:
-    - mmahadevan108
     - ZhaoxiangJin
+    - mmahadevan108
   collaborators:
     - manuargue
     - PetervdPerk-NXP
@@ -6134,6 +6207,7 @@ West:
   maintainers:
     - nzmichaelh
     - kholia
+    - BOJIT
   collaborators:
     - VynDragon
   files:
@@ -6272,11 +6346,21 @@ West:
     - tests/crypto/secp256r1/
     - tests/benchmarks/mbedtls/
   labels:
-    - "area: mbedTLS / PSA Crypto"
+    - "area: Mbed TLS"
   tests:
     - benchmark.crypto.mbedtls
     - crypto.mbedtls
     - psa.secure_storage
+
+"West project: mbedtls-framework":
+  status: maintained
+  maintainers:
+    - ceolin
+    - valeriosetti
+    - tomi-font
+  files: []
+  labels:
+    - "area: Mbed TLS"
 
 "West project: mcuboot":
   status: maintained
@@ -6401,7 +6485,7 @@ West:
     - Vge0rge
     - wearyzen
     - valeriosetti
-    - ithinuel
+    - JordanYates
   files: []
   labels:
     - "area: TF-M"
@@ -6424,10 +6508,20 @@ West:
     - Vge0rge
     - wearyzen
     - valeriosetti
-    - ithinuel
+    - JordanYates
   files: []
   labels:
     - "area: TF-M"
+
+"West project: tf-psa-crypto":
+  status: maintained
+  maintainers:
+    - ceolin
+    - valeriosetti
+    - tomi-font
+  files: []
+  labels:
+    - "area: TF-PSA-Crypto"
 
 "West project: tflite-micro":
   status: maintained
@@ -6474,7 +6568,7 @@ West:
     - Vge0rge
     - wearyzen
     - valeriosetti
-    - ithinuel
+    - JordanYates
   files:
     - modules/trusted-firmware-m/
     - samples/tfm_integration/
@@ -6643,6 +6737,7 @@ nRF IronSide SE Platforms:
     - jonathannilsen
     - karstenkoenig
     - SebastianBoe
+    - kyberdin
   files:
     - modules/hal_nordic/ironside/
     - soc/nordic/common/uicr/

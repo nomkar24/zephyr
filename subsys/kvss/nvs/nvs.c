@@ -17,12 +17,6 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(fs_nvs, CONFIG_NVS_LOG_LEVEL);
 
-#ifdef CONFIG_ZTEST
-#define STATIC
-#else
-#define STATIC static
-#endif
-
 static int nvs_prev_ate(struct nvs_fs *fs, uint32_t *addr, struct nvs_ate *ate);
 static int nvs_ate_valid(struct nvs_fs *fs, uint16_t entry_addr,
 			 const struct nvs_ate *entry);
@@ -112,8 +106,8 @@ static inline size_t nvs_al_size(struct nvs_fs *fs, size_t len)
  * may include a header, primary data, and a tail. All buffers are
  * written as a single contiguous stream.
  */
-STATIC int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr,
-				    const struct nvs_flash_wrt_stream *strm)
+ZTESTABLE_STATIC int nvs_flash_al_wrt_streams(struct nvs_fs *fs, uint32_t addr,
+					      const struct nvs_flash_wrt_stream *strm)
 {
 	const struct flash_parameters *fp = fs->flash_parameters;
 	size_t wbs = fp->write_block_size;
@@ -479,6 +473,11 @@ static int nvs_flash_erase_sector(struct nvs_fs *fs, uint32_t addr)
 	return rc;
 }
 
+static inline uint16_t nvs_data_len_with_crc(size_t len)
+{
+	return (uint16_t)(len ? len + NVS_DATA_CRC_SIZE : 0U);
+}
+
 /* crc update on allocation entry */
 static void nvs_ate_crc8_update(struct nvs_ate *entry)
 {
@@ -571,7 +570,7 @@ static int nvs_flash_wrt_entry(struct nvs_fs *fs, uint16_t id, const void *data,
 
 	entry.id = id;
 	entry.offset = (uint16_t)(fs->data_wra & ADDR_OFFS_MASK);
-	entry.len = (uint16_t)len;
+	entry.len = nvs_data_len_with_crc(len);
 	entry.part = 0xff;
 
 	rc = nvs_flash_data_wrt(fs, data, len, true);
@@ -579,12 +578,6 @@ static int nvs_flash_wrt_entry(struct nvs_fs *fs, uint16_t id, const void *data,
 		return rc;
 	}
 
-#ifdef CONFIG_NVS_DATA_CRC
-	/* No CRC has been added if this is a deletion write request */
-	if (len > 0) {
-		entry.len += NVS_DATA_CRC_SIZE;
-	}
-#endif
 	nvs_ate_crc8_update(&entry);
 
 	rc = nvs_flash_ate_wrt(fs, &entry);
@@ -763,7 +756,7 @@ static int nvs_gc_flush_and_try_write(struct nvs_fs *fs,
 
 	if (entry) {
 		required_space = ate_size +
-			nvs_al_size(fs, bm_ctx->buffer_pos + entry->len + NVS_DATA_CRC_SIZE);
+			nvs_al_size(fs, bm_ctx->buffer_pos + nvs_data_len_with_crc(entry->len));
 	}
 
 	if (!entry || (fs->ate_wra < (fs->data_wra + required_space))) {
@@ -794,7 +787,7 @@ static int nvs_gc_flush_and_try_write(struct nvs_fs *fs,
 	}
 
 	wrt_ate.id = entry->id;
-	wrt_ate.len = entry->len + NVS_DATA_CRC_SIZE;
+	wrt_ate.len = nvs_data_len_with_crc(entry->len);
 	wrt_ate.part = 0xff;
 
 	nvs_ate_crc8_update(&wrt_ate);
@@ -910,7 +903,7 @@ static int nvs_gc(struct nvs_fs *fs, struct nvs_gc_write_entry *entry)
 			 * flush.
 			 */
 			if (entry && (entry->id == gc_ate.id) &&
-			    ((entry->len + NVS_DATA_CRC_SIZE) <= gc_ate.len)) {
+			    (nvs_data_len_with_crc(entry->len) <= gc_ate.len)) {
 				LOG_DBG("Skipping entry id %d, len %d; will write later",
 					 gc_ate.id, gc_ate.len);
 				continue;
@@ -1319,7 +1312,7 @@ ssize_t nvs_write(struct nvs_fs *fs, uint16_t id, const void *data, size_t len)
 	}
 
 	ate_size = nvs_al_size(fs, sizeof(struct nvs_ate));
-	data_size = nvs_al_size(fs, len ? len + NVS_DATA_CRC_SIZE : 0U);
+	data_size = nvs_al_size(fs, nvs_data_len_with_crc(len));
 
 	/* The maximum data size is sector size - 4 ate
 	 * where: 1 ate for data, 1 ate for sector close, 1 ate for gc done,

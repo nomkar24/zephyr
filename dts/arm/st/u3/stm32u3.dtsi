@@ -106,6 +106,42 @@
 				/* maximum erase time(ms) for a 4KB page */
 				max-erase-time = <14>;
 			};
+
+			st_nvm_user_otp: flash@bfa0000 {
+				compatible = "st,stm32-nvm-otp";
+				reg = <0x0bfa0000 512>;
+				status = "disabled";
+			};
+
+			/* Undocumented/unnamed RO area */
+			flash@bfa0500 {
+				compatible = "st,stm32-nvm-otp";
+				reg = <0x0bfa0500 2816>;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					ts_cal1_otp: ts-cal1@210 {
+						reg = <0x210 0x2>;
+						#nvmem-cell-cells = <0>;
+						read-only;
+					};
+
+					ts_cal2_otp: ts-cal2@242 {
+						reg = <0x242 0x2>;
+						#nvmem-cell-cells = <0>;
+						read-only;
+					};
+
+					vrefint_otp: vrefint@2a5 {
+						reg = <0x2a5 0x2>;
+						#nvmem-cell-cells = <0>;
+						read-only;
+					};
+				};
+			};
 		};
 
 		rcc: rcc@40030c00 {
@@ -424,7 +460,7 @@
 			reg = <0x40015404 0x20>;
 			clocks = <&rcc STM32_CLOCK(APB2, 21)>;
 			dmas = <&gpdma1 1 36 (STM32_DMA_MODE_NORMAL | STM32_DMA_PRIORITY_HIGH |
-				STM32_DMA_16BITS)>;
+					      STM32_DMA_16BITS)>;
 			status = "disabled";
 		};
 
@@ -435,7 +471,7 @@
 			reg = <0x40015424 0x20>;
 			clocks = <&rcc STM32_CLOCK(APB2, 21)>;
 			dmas = <&gpdma1 0 37 (STM32_DMA_MODE_NORMAL | STM32_DMA_PRIORITY_HIGH |
-				STM32_DMA_16BITS)>;
+					      STM32_DMA_16BITS)>;
 			status = "disabled";
 		};
 
