@@ -14,5 +14,9 @@ supported:
   - adc
   - counter
   - can
+  - crypto
+  - aes
+  - ptp_clock
   - usb_device
+  - sdhc
 vendor: st

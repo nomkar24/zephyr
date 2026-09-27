@@ -17,7 +17,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/byteorder.h>
 
-#include "bootutil/bootutil_public.h"
+#include <bootutil/bootutil_public.h>
 #include <zephyr/dfu/mcuboot.h>
 
 #if defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_RAM_LOAD) || \
@@ -77,10 +77,9 @@ enum IMAGE_INDEXES {
 	defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_RAM_LOAD_WITH_REVERT)
 /* For RAM LOAD mode, the active image must be fetched from the bootloader */
 #define ACTIVE_SLOT_FLASH_AREA_ID boot_fetch_active_slot()
-#define INVALID_SLOT_ID 255
 #else
 /* Get active partition. zephyr,code-partition chosen node must be defined */
-#define ACTIVE_SLOT_FLASH_AREA_ID DT_FIXED_PARTITION_ID(DT_CHOSEN(zephyr_code_partition))
+#define ACTIVE_SLOT_FLASH_AREA_ID DT_PARTITION_ID(DT_CHOSEN(zephyr_code_partition))
 #endif
 
 /*
@@ -118,95 +117,95 @@ uint8_t boot_fetch_active_slot(void)
 	if (rc <= 0) {
 		LOG_ERR("Failed to fetch active slot: %d", rc);
 
-		return INVALID_SLOT_ID;
+		return BOOT_INVALID_SLOT_ID;
 	}
 
 	LOG_DBG("Active slot: %d", slot);
 	/* Map slot number back to flash area ID */
 	switch (slot) {
 	case 0:
-		return FIXED_PARTITION_ID(SLOT0_PARTITION);
+		return PARTITION_ID(SLOT0_PARTITION);
 
-#if FIXED_PARTITION_EXISTS(SLOT1_PARTITION)
+#if PARTITION_EXISTS(SLOT1_PARTITION)
 	case 1:
-		return FIXED_PARTITION_ID(SLOT1_PARTITION);
+		return PARTITION_ID(SLOT1_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT2_PARTITION)
+#if PARTITION_EXISTS(SLOT2_PARTITION)
 	case 2:
-		return FIXED_PARTITION_ID(SLOT2_PARTITION);
+		return PARTITION_ID(SLOT2_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT3_PARTITION)
+#if PARTITION_EXISTS(SLOT3_PARTITION)
 	case 3:
-		return FIXED_PARTITION_ID(SLOT3_PARTITION);
+		return PARTITION_ID(SLOT3_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT4_PARTITION)
+#if PARTITION_EXISTS(SLOT4_PARTITION)
 	case 4:
-		return FIXED_PARTITION_ID(SLOT4_PARTITION);
+		return PARTITION_ID(SLOT4_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT5_PARTITION)
+#if PARTITION_EXISTS(SLOT5_PARTITION)
 	case 5:
-		return FIXED_PARTITION_ID(SLOT5_PARTITION);
+		return PARTITION_ID(SLOT5_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT6_PARTITION)
+#if PARTITION_EXISTS(SLOT6_PARTITION)
 	case 6:
-		return FIXED_PARTITION_ID(SLOT6_PARTITION);
+		return PARTITION_ID(SLOT6_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT7_PARTITION)
+#if PARTITION_EXISTS(SLOT7_PARTITION)
 	case 7:
-		return FIXED_PARTITION_ID(SLOT7_PARTITION);
+		return PARTITION_ID(SLOT7_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT8_PARTITION)
+#if PARTITION_EXISTS(SLOT8_PARTITION)
 	case 8:
-		return FIXED_PARTITION_ID(SLOT8_PARTITION);
+		return PARTITION_ID(SLOT8_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT9_PARTITION)
+#if PARTITION_EXISTS(SLOT9_PARTITION)
 	case 9:
-		return FIXED_PARTITION_ID(SLOT9_PARTITION);
+		return PARTITION_ID(SLOT9_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT10_PARTITION)
+#if PARTITION_EXISTS(SLOT10_PARTITION)
 	case 10:
-		return FIXED_PARTITION_ID(SLOT10_PARTITION);
+		return PARTITION_ID(SLOT10_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT11_PARTITION)
+#if PARTITION_EXISTS(SLOT11_PARTITION)
 	case 11:
-		return FIXED_PARTITION_ID(SLOT11_PARTITION);
+		return PARTITION_ID(SLOT11_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT12_PARTITION)
+#if PARTITION_EXISTS(SLOT12_PARTITION)
 	case 12:
-		return FIXED_PARTITION_ID(SLOT12_PARTITION);
+		return PARTITION_ID(SLOT12_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT13_PARTITION)
+#if PARTITION_EXISTS(SLOT13_PARTITION)
 	case 13:
-		return FIXED_PARTITION_ID(SLOT13_PARTITION);
+		return PARTITION_ID(SLOT13_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT14_PARTITION)
+#if PARTITION_EXISTS(SLOT14_PARTITION)
 	case 14:
-		return FIXED_PARTITION_ID(SLOT14_PARTITION);
+		return PARTITION_ID(SLOT14_PARTITION);
 #endif
 
-#if FIXED_PARTITION_EXISTS(SLOT15_PARTITION)
+#if PARTITION_EXISTS(SLOT15_PARTITION)
 	case 15:
-		return FIXED_PARTITION_ID(SLOT15_PARTITION);
+		return PARTITION_ID(SLOT15_PARTITION);
 #endif
 
 	default:
 		break;
 	}
 
-	return INVALID_SLOT_ID;
+	return BOOT_INVALID_SLOT_ID;
 }
 #else  /* CONFIG_MCUBOOT_BOOTLOADER_MODE_RAM_LOAD ||
 	* CONFIG_MCUBOOT_BOOTLOADER_MODE_RAM_LOAD_WITH_REVERT
@@ -225,34 +224,34 @@ size_t boot_get_image_start_offset(uint8_t area_id)
 	size_t off = 0;
 	int image = IMAGE_INDEX_INVALID;
 
-	if (area_id == FIXED_PARTITION_ID(slot1_partition)) {
+	if (area_id == PARTITION_ID(slot1_partition)) {
 		image = IMAGE_INDEX_0;
-#if FIXED_PARTITION_EXISTS(slot3_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot3_partition)) {
+#if PARTITION_EXISTS(slot3_partition)
+	} else if (area_id == PARTITION_ID(slot3_partition)) {
 		image = IMAGE_INDEX_1;
 #endif
-#if FIXED_PARTITION_EXISTS(slot5_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot5_partition)) {
+#if PARTITION_EXISTS(slot5_partition)
+	} else if (area_id == PARTITION_ID(slot5_partition)) {
 		image = IMAGE_INDEX_2;
 #endif
-#if FIXED_PARTITION_EXISTS(slot7_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot7_partition)) {
+#if PARTITION_EXISTS(slot7_partition)
+	} else if (area_id == PARTITION_ID(slot7_partition)) {
 		image = IMAGE_INDEX_3;
 #endif
-#if FIXED_PARTITION_EXISTS(slot9_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot9_partition)) {
+#if PARTITION_EXISTS(slot9_partition)
+	} else if (area_id == PARTITION_ID(slot9_partition)) {
 		image = IMAGE_INDEX_4;
 #endif
-#if FIXED_PARTITION_EXISTS(slot11_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot11_partition)) {
+#if PARTITION_EXISTS(slot11_partition)
+	} else if (area_id == PARTITION_ID(slot11_partition)) {
 		image = IMAGE_INDEX_5;
 #endif
-#if FIXED_PARTITION_EXISTS(slot13_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot13_partition)) {
+#if PARTITION_EXISTS(slot13_partition)
+	} else if (area_id == PARTITION_ID(slot13_partition)) {
 		image = IMAGE_INDEX_6;
 #endif
-#if FIXED_PARTITION_EXISTS(slot15_partition)
-	} else if (area_id == FIXED_PARTITION_ID(slot15_partition)) {
+#if PARTITION_EXISTS(slot15_partition)
+	} else if (area_id == PARTITION_ID(slot15_partition)) {
 		image = IMAGE_INDEX_7;
 #endif
 
@@ -263,8 +262,6 @@ size_t boot_get_image_start_offset(uint8_t area_id)
 		 * slot image header
 		 */
 		const struct flash_area *fa;
-		uint32_t num_sectors = SWAP_USING_OFFSET_SECTOR_UPDATE_BEGIN;
-		struct flash_sector sector_data;
 		int rc;
 
 		rc = flash_area_open(area_id, &fa);
@@ -274,6 +271,10 @@ size_t boot_get_image_start_offset(uint8_t area_id)
 		}
 
 		if (mcuboot_swap_type_multi(image) != BOOT_SWAP_TYPE_REVERT) {
+#if CONFIG_IMG_CUSTOM_SECTOR_SIZE == 0
+			uint32_t num_sectors = SWAP_USING_OFFSET_SECTOR_UPDATE_BEGIN;
+			struct flash_sector sector_data;
+
 			/* For swap using offset mode, the image starts in the second sector of
 			 * the upgrade slot, so apply the offset when this is needed, do this by
 			 * getting information on first sector only, this is expected to return an
@@ -286,6 +287,9 @@ size_t boot_get_image_start_offset(uint8_t area_id)
 			} else {
 				off = sector_data.fs_size;
 			}
+#else
+			off = CONFIG_IMG_CUSTOM_SECTOR_SIZE;
+#endif
 		}
 
 		flash_area_close(fa);
@@ -463,7 +467,9 @@ int boot_write_img_confirmed(void)
 		return -EIO;
 	}
 
-	rc = boot_set_next(fa, true, true);
+	if (boot_set_next(fa, true, true) != 0) {
+		rc = -EIO;
+	}
 
 	flash_area_close(fa);
 

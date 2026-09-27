@@ -79,3 +79,7 @@
 	compatible = "nxp,tpm-timer";
 	status = "okay";
 };
+
+&sys_ctr {
+	status = "okay";
+};

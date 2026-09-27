@@ -74,6 +74,11 @@
 			polling-mode;
 		};
 
+		vs1838b {
+			compatible = "vishay,vs1838b";
+			data-gpios = <&test_gpio 0 0>;
+		};
+
 		evdev {
 			compatible = "zephyr,native-linux-evdev";
 		};
@@ -168,6 +173,7 @@
 			input = <&double_tap>;
 			compatible = "zephyr,input-double-tap";
 			input-codes = <0>;
+			single-tap-codes = <0>;
 			double-tap-codes = <0>;
 			double-tap-delay-ms = <0>;
 		};
@@ -193,6 +199,16 @@
 			usb_kb {
 				compatible = "wch,ch9350l";
 				status = "okay";
+			};
+
+			crsf {
+				compatible = "tbs,crsf";
+
+				right_stick_x {
+					channel = <1>;
+					type = <INPUT_EV_ABS>;
+					zephyr,code = <INPUT_ABS_RX>;
+				};
 			};
 		};
 
@@ -225,7 +241,7 @@
 			};
 
 			cst816s@2 {
-				compatible = "hynitron,cst816s";
+				compatible = "hynitron,cst8xx";
 				reg = <0x2>;
 				irq-gpios = <&test_gpio 0 0>;
 				rst-gpios = <&test_gpio 1 0>;
@@ -320,6 +336,21 @@
 				compatible = "parade,tma525b";
 				reg = <0xd>;
 				int-gpios = <&test_gpio 0 0>;
+			};
+
+			seesaw@e {
+				compatible = "adafruit,seesaw-gamepad";
+				reg = <0xe>;
+			};
+
+			modulino-buttons@f {
+				compatible = "i2c-device";
+				reg = <0xf>;
+
+				modulino_buttons {
+					compatible = "arduino,modulino-buttons";
+					zephyr,codes = <0>, <1>, <2>;
+				};
 			};
 		};
 

@@ -62,8 +62,8 @@ struct loopback_desc {
 
 struct lb_data {
 	struct loopback_desc *const desc;
-	const struct usb_desc_header **const fs_desc;
-	const struct usb_desc_header **const hs_desc;
+	const struct usb_desc_header *const *const fs_desc;
+	const struct usb_desc_header *const *const hs_desc;
 	atomic_t state;
 };
 
@@ -202,29 +202,32 @@ static void lb_update(struct usbd_class_data *c_data,
 		c_data, iface, alternate);
 }
 
-static int lb_control_to_host(struct usbd_class_data *c_data,
-			      const struct usb_setup_packet *const setup,
-			      struct net_buf *const buf)
+static struct net_buf *lb_control_to_host(struct usbd_class_data *c_data,
+					  const struct usb_setup_packet *const setup)
 {
 	if (setup->RequestType.recipient != USB_REQTYPE_RECIPIENT_DEVICE) {
-		errno = -ENOTSUP;
-		return 0;
+		return NULL;
 	}
 
 	if (setup->bRequest == LB_VENDOR_REQ_IN) {
-		net_buf_add_mem(buf, lb_buf,
-				MIN(sizeof(lb_buf), setup->wLength));
+		struct net_buf *buf;
+		uint16_t len = MIN(sizeof(lb_buf), setup->wLength);
 
-		LOG_WRN("Device-to-Host, wLength %u | %zu", setup->wLength,
-			MIN(sizeof(lb_buf), setup->wLength));
+		buf = usbd_ep_ctrl_data_in_alloc(usbd_class_get_ctx(c_data), len);
+		if (buf == NULL) {
+			return NULL;
+		}
 
-		return 0;
+		net_buf_add_mem(buf, lb_buf, len);
+
+		LOG_WRN("Device-to-Host, wLength %u | %u", setup->wLength, len);
+
+		return buf;
 	}
 
 	LOG_ERR("Class request 0x%x not supported", setup->bRequest);
-	errno = -ENOTSUP;
 
-	return 0;
+	return NULL;
 }
 
 static int lb_control_to_dev(struct usbd_class_data *c_data,
@@ -232,7 +235,11 @@ static int lb_control_to_dev(struct usbd_class_data *c_data,
 			     const struct net_buf *const buf)
 {
 	if (setup->RequestType.recipient != USB_REQTYPE_RECIPIENT_DEVICE) {
-		errno = -ENOTSUP;
+		return -ENOTSUP;
+	}
+
+	if (setup->wLength && (buf == NULL)) {
+		/* Data OUT can be received */
 		return 0;
 	}
 
@@ -244,13 +251,11 @@ static int lb_control_to_dev(struct usbd_class_data *c_data,
 	}
 
 	LOG_ERR("Class request 0x%x not supported", setup->bRequest);
-	errno = -ENOTSUP;
-
-	return 0;
+	return -ENOTSUP;
 }
 
-static void *lb_get_desc(struct usbd_class_data *const c_data,
-			 const enum usbd_speed speed)
+static const void *lb_get_desc(struct usbd_class_data *const c_data,
+			       const enum usbd_speed speed)
 {
 	struct lb_data *data = usbd_class_get_private(c_data);
 
@@ -288,7 +293,7 @@ static int lb_init(struct usbd_class_data *c_data)
 	return 0;
 }
 
-struct usbd_class_api lb_api = {
+static const struct usbd_class_api lb_api = {
 	.update = lb_update,
 	.control_to_host = lb_control_to_host,
 	.control_to_dev = lb_control_to_dev,
@@ -465,7 +470,7 @@ static struct loopback_desc lb_desc_##x = {					\
 	},									\
 };										\
 										\
-const static struct usb_desc_header *lb_fs_desc_##x[] = {			\
+const static struct usb_desc_header *const lb_fs_desc_##x[] = {			\
 	(struct usb_desc_header *) &lb_desc_##x.iad,				\
 	(struct usb_desc_header *) &lb_desc_##x.if0,				\
 	(struct usb_desc_header *) &lb_desc_##x.if0_in_ep,			\
@@ -482,7 +487,7 @@ const static struct usb_desc_header *lb_fs_desc_##x[] = {			\
 	(struct usb_desc_header *) &lb_desc_##x.nil_desc,			\
 };										\
 										\
-const static struct usb_desc_header *lb_hs_desc_##x[] = {			\
+const static struct usb_desc_header *const lb_hs_desc_##x[] = {			\
 	(struct usb_desc_header *) &lb_desc_##x.iad,				\
 	(struct usb_desc_header *) &lb_desc_##x.if0,				\
 	(struct usb_desc_header *) &lb_desc_##x.if0_hs_in_ep,			\

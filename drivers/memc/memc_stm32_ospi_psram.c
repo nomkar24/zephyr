@@ -25,7 +25,7 @@ LOG_MODULE_REGISTER(memc_stm32_ospi_psram, CONFIG_MEMC_LOG_LEVEL);
 #define STM32_OSPI_NODE DT_INST_PARENT(0)
 
 #ifdef CONFIG_SHARED_MULTI_HEAP
-static const struct shared_multi_heap_region smh_psram = {
+static struct shared_multi_heap_region smh_psram = {
 	.addr = DT_REG_ADDR(DT_NODELABEL(psram)),
 	.size = DT_REG_SIZE(DT_NODELABEL(psram)),
 	.attr = SMH_REG_ATTR_EXTERNAL,
@@ -404,15 +404,15 @@ static int memc_stm32_ospi_psram_init(const struct device *dev)
 PINCTRL_DT_DEFINE(STM32_OSPI_NODE);
 
 static struct memc_stm32_ospi_psram_config memc_stm32_ospi_config = {
-	.pclken = STM32_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospix),
+	.pclken = STM32_DT_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospix),
 	.pcfg = PINCTRL_DT_DEV_CONFIG_GET(STM32_OSPI_NODE),
 	.memory_size = DT_INST_PROP(0, size) / 8, /* In Bytes */
 	.max_frequency = DT_INST_PROP(0, max_frequency),
 #if DT_CLOCKS_HAS_NAME(STM32_OSPI_NODE, ospi_ker)
-	.pclken_ker = STM32_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospi_ker),
+	.pclken_ker = STM32_DT_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospi_ker),
 #endif
 #if DT_CLOCKS_HAS_NAME(STM32_OSPI_NODE, ospi_mgr)
-	.pclken_mgr = STM32_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospi_mgr),
+	.pclken_mgr = STM32_DT_CLOCK_INFO_BY_NAME(STM32_OSPI_NODE, ospi_mgr),
 #endif
 };
 

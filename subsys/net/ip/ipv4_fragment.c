@@ -32,6 +32,11 @@ static void reassembly_timeout(struct k_work *work);
 
 static struct net_ipv4_reassembly reassembly[CONFIG_NET_IPV4_FRAGMENT_MAX_COUNT];
 
+/* Serializes the reassembly array between the RX path and the timeout handler,
+ * which run on different threads.
+ */
+static K_MUTEX_DEFINE(reass_lock);
+
 static struct net_ipv4_reassembly *reassembly_get(uint16_t id, const uint8_t *src,
 						  const uint8_t *dst, uint8_t protocol)
 {
@@ -125,25 +130,49 @@ static void reassembly_timeout(struct k_work *work)
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct net_ipv4_reassembly *reass =
 		CONTAINER_OF(dwork, struct net_ipv4_reassembly, timer);
+	struct net_pkt *first = NULL;
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
+
+	/* A pending timer means the slot holds a new datagram, stored while
+	 * this handler was waiting for the lock.
+	 */
+	if (k_work_delayable_remaining_get(dwork) != 0) {
+		k_mutex_unlock(&reass_lock);
+		return;
+	}
 
 	reassembly_info("Reassembly cancelled", reass);
 
-	/* Send a ICMPv4 Time Exceeded only if we received the first fragment */
+	/* Detach the first fragment so the ICMP error can be sent without
+	 * holding the lock; sending may block on buffers and the TX path.
+	 */
 	if (reass->pkt[0] && net_pkt_ipv4_fragment_offset(reass->pkt[0]) == 0) {
-		net_icmpv4_send_error(reass->pkt[0], NET_ICMPV4_TIME_EXCEEDED,
-				      NET_ICMPV4_TIME_EXCEEDED_FRAGMENT_REASSEMBLY_TIME);
+		first = reass->pkt[0];
+		reass->pkt[0] = NULL;
 	}
 
 	reassembly_cancel(reass->id, &reass->src, &reass->dst);
+
+	k_mutex_unlock(&reass_lock);
+
+	/* Send a ICMPv4 Time Exceeded only if we received the first fragment */
+	if (first != NULL) {
+		net_icmpv4_send_error(first, NET_ICMPV4_TIME_EXCEEDED,
+				      NET_ICMPV4_TIME_EXCEEDED_FRAGMENT_REASSEMBLY_TIME);
+		net_pkt_unref(first);
+	}
 }
 
-static void reassemble_packet(struct net_ipv4_reassembly *reass)
+static struct net_pkt *reassemble_packet(struct net_ipv4_reassembly *reass)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(ipv4_access, struct net_ipv4_hdr);
 	struct net_ipv4_hdr *ipv4_hdr;
 	struct net_pkt *pkt;
 	struct net_buf *last;
 	int i;
+	int ret;
+	uint16_t chksum = 0;
 
 	k_work_cancel_delayable(&reass->timer);
 
@@ -163,7 +192,9 @@ static void reassemble_packet(struct net_ipv4_reassembly *reass)
 		/* Get rid of IPv4 header which is at the beginning of the fragment. */
 		ipv4_hdr = (struct net_ipv4_hdr *)net_pkt_get_data(pkt, &ipv4_access);
 		if (!ipv4_hdr) {
-			goto error;
+			LOG_ERR("Failed to get IPv4 header");
+			reassembly_cancel(reass->id, &reass->src, &reass->dst);
+			return NULL;
 		}
 
 		LOG_DBG("Removing %d bytes from start of pkt %p", net_pkt_ip_hdr_len(pkt),
@@ -172,7 +203,7 @@ static void reassemble_packet(struct net_ipv4_reassembly *reass)
 		if (net_pkt_pull(pkt, net_pkt_ip_hdr_len(pkt))) {
 			LOG_ERR("Failed to pull headers");
 			reassembly_cancel(reass->id, &reass->src, &reass->dst);
-			return;
+			return NULL;
 		}
 
 		/* Attach the data to the previous packet */
@@ -201,30 +232,42 @@ static void reassemble_packet(struct net_ipv4_reassembly *reass)
 	ipv4_hdr->offset[0] = 0;
 	ipv4_hdr->offset[1] = 0;
 	ipv4_hdr->chksum = 0;
-	ipv4_hdr->chksum = net_calc_chksum_ipv4(pkt);
 
-	net_pkt_set_data(pkt, &ipv4_access);
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	if (ret < 0) {
+		goto error;
+	}
+
+	ipv4_hdr->chksum = chksum;
+
+	ret = net_pkt_set_data(pkt, &ipv4_access);
+	if (ret < 0) {
+		goto error;
+	}
+
 	net_pkt_set_ip_reassembled(pkt, true);
 
 	LOG_DBG("New pkt %p IPv4 len is %zd bytes", pkt, net_pkt_get_len(pkt));
 
-	/* We need to use the queue when feeding the packet back into the
-	 * IP stack as we might run out of stack if we call processing_data()
-	 * directly. As the packet does not contain link layer header, we
-	 * MUST NOT pass it to L2 so mark it as l2_processed.
+	/* The packet carries no link layer header, so it MUST NOT be passed to
+	 * L2; mark it as l2_processed. The caller hands it back to the IP stack
+	 * once the reassembly lock is released.
 	 */
 	net_pkt_set_l2_processed(pkt, true);
-	if (net_recv_data(net_pkt_iface(pkt), pkt) >= 0) {
-		return;
-	}
+
+	return pkt;
 
 error:
 	net_pkt_unref(pkt);
+
+	return NULL;
 }
 
 void net_ipv4_frag_foreach(net_ipv4_frag_cb_t cb, void *user_data)
 {
 	int i;
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
 
 	for (i = 0; i < CONFIG_NET_IPV4_FRAGMENT_MAX_COUNT; i++) {
 		if (!k_work_delayable_remaining_get(&reassembly[i].timer)) {
@@ -233,6 +276,8 @@ void net_ipv4_frag_foreach(net_ipv4_frag_cb_t cb, void *user_data)
 
 		cb(&reassembly[i], user_data);
 	}
+
+	k_mutex_unlock(&reass_lock);
 }
 
 /* Verify that we have all the fragments received and in correct order.
@@ -321,6 +366,7 @@ static int shift_packets(struct net_ipv4_reassembly *reass, int pos)
 enum net_verdict net_ipv4_handle_fragment_hdr(struct net_pkt *pkt, struct net_ipv4_hdr *hdr)
 {
 	struct net_ipv4_reassembly *reass = NULL;
+	struct net_pkt *reass_pkt = NULL;
 	uint16_t flag;
 	bool found;
 	uint8_t more;
@@ -340,12 +386,14 @@ enum net_verdict net_ipv4_handle_fragment_hdr(struct net_pkt *pkt, struct net_ip
 		 */
 		net_icmpv4_send_error(pkt, NET_ICMPV4_BAD_IP_HEADER,
 				      NET_ICMPV4_BAD_IP_HEADER_LENGTH);
-		goto drop;
+		return NET_DROP;
 	}
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
 
 	reass = reassembly_get(id, hdr->src, hdr->dst, hdr->proto);
 	if (!reass) {
-		LOG_ERR("Cannot get reassembly slot, dropping pkt %p", pkt);
+		LOG_DBG("Cannot get reassembly slot, dropping pkt %p", pkt);
 		goto drop;
 	}
 
@@ -405,18 +453,31 @@ enum net_verdict net_ipv4_handle_fragment_hdr(struct net_pkt *pkt, struct net_ip
 	reassembly_info("Reassembly last pkt", reass);
 
 	/* The last fragment received, reassemble the packet */
-	reassemble_packet(reass);
+	reass_pkt = reassemble_packet(reass);
 
 accept:
+	k_mutex_unlock(&reass_lock);
+
+	if (reass_pkt != NULL) {
+		/* Feed the packet back into the IP stack through the RX queue,
+		 * as processing it here might run out of stack.
+		 */
+		if (net_recv_data(net_pkt_iface(reass_pkt), reass_pkt) < 0) {
+			net_pkt_unref(reass_pkt);
+		}
+	}
+
 	return NET_OK;
 
 drop:
 	if (reass) {
 		if (reassembly_cancel(reass->id, &reass->src, &reass->dst)) {
+			k_mutex_unlock(&reass_lock);
 			return NET_OK;
 		}
 	}
 
+	k_mutex_unlock(&reass_lock);
 	return NET_DROP;
 }
 
@@ -428,6 +489,7 @@ static int send_ipv4_fragment(struct net_pkt *pkt, uint16_t rand_id, uint16_t fi
 	struct net_pkt_cursor cur;
 	struct net_pkt_cursor cur_pkt;
 	uint16_t offset_pkt;
+	uint16_t chksum = 0;
 
 	frag_pkt = net_pkt_alloc_with_buffer(net_pkt_iface(pkt), fit_len +
 					     net_pkt_ip_hdr_len(pkt),
@@ -483,11 +545,20 @@ static int send_ipv4_fragment(struct net_pkt *pkt, uint16_t rand_id, uint16_t fi
 	ipv4_hdr->len = net_htons((fit_len + net_pkt_ip_hdr_len(pkt)));
 
 	ipv4_hdr->chksum = 0;
-	ipv4_hdr->chksum = net_calc_chksum_ipv4(frag_pkt);
+
+	ret = net_calc_chksum_ipv4(frag_pkt, &chksum);
+	if (ret < 0) {
+		goto fail;
+	}
+
+	ipv4_hdr->chksum = chksum;
 
 	net_pkt_set_chksum_done(frag_pkt, true);
 
-	net_pkt_set_data(frag_pkt, &ipv4_access);
+	ret = net_pkt_set_data(frag_pkt, &ipv4_access);
+	if (ret < 0) {
+		goto fail;
+	}
 
 	net_pkt_set_overwrite(frag_pkt, false);
 	net_pkt_cursor_restore(frag_pkt, &cur);
@@ -566,7 +637,10 @@ int net_ipv4_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 		struct net_pkt_cursor backup;
 
 		net_pkt_cursor_backup(pkt, &backup);
-		net_pkt_acknowledge_data(pkt, &frag_access);
+		ret = net_pkt_acknowledge_data(pkt, &frag_access);
+		if (ret < 0) {
+			return ret;
+		}
 
 		switch (frag_hdr->proto) {
 		case NET_IPPROTO_ICMP:
@@ -654,7 +728,11 @@ use_interface_mtu:
 				LOG_DBG("Cannot fragment IPv4 pkt (%d)", ret);
 
 				if (ret == -EPERM) {
-					/* Try to send the packet if the don't fragment flag is set
+					if (net_pkt_dont_fragment(pkt)) {
+						return NET_DROP;
+					}
+
+					/* For PMTU discovery, preserve the existing DF behavior
 					 * and hope the original large packet can be sent OK.
 					 */
 					goto ignore_frag_error;

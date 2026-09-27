@@ -1,6 +1,0 @@
-tests:
-  arch.arm.switch:
-    arch_allow: arm
-    filter: CONFIG_CPU_CORTEX_M and CONFIG_USE_SWITCH
-    tags:
-      - arm

@@ -19,7 +19,6 @@ properties:
   ti,clk-div:
     type: int
     required: true
-    default: 1
     enum:
       - 1
       - 2
@@ -27,4 +26,4 @@ properties:
       - 6
       - 8
     description: |
-      Clock divider selction value.
+      Clock divider selection value.

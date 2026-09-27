@@ -14,17 +14,22 @@
  * initialization is performed.
  */
 
-#include "kernel_arch_func.h"
-
 #include <zephyr/linker/linker-defs.h>
+#include <zephyr/linker/section_tags.h>
 #include <zephyr/platform/hooks.h>
-#include <zephyr/arch/cache.h>
+#include <zephyr/platform/fwargs.h>
 #include <zephyr/arch/common/xip.h>
 #include <zephyr/arch/common/init.h>
+#include <zephyr/sys/util.h>
 
-extern void z_arm64_mm_init(bool is_primary_core);
+#include "boot.h"
+#include "kernel_arch_func.h"
 
 __weak void z_arm64_mm_init(bool is_primary_core) { }
+
+#ifdef CONFIG_FWARGS_HANDLER_HOOK
+__noinit uintptr_t z_arm64_fwargs[4];
+#endif
 
 /**
  *
@@ -42,6 +47,9 @@ FUNC_NORETURN void z_prep_c(void)
 
 	arch_bss_zero();
 	arch_data_copy();
+#ifdef CONFIG_FWARGS_HANDLER_HOOK
+	fwargs_handler_hook(z_arm64_fwargs, ARRAY_SIZE(z_arm64_fwargs));
+#endif
 #ifdef CONFIG_ARM64_SAFE_EXCEPTION_STACK
 	/* After bss clean, _kernel.cpus is in bss section */
 	z_arm64_safe_exception_stack_init();
@@ -55,13 +63,9 @@ FUNC_NORETURN void z_prep_c(void)
 
 
 #if CONFIG_MP_MAX_NUM_CPUS > 1
-extern FUNC_NORETURN void arch_secondary_cpu_init(void);
 void z_arm64_secondary_prep_c(void)
 {
 	arch_secondary_cpu_init();
-#if CONFIG_ARCH_CACHE
-	arch_cache_init();
-#endif
 
 	CODE_UNREACHABLE;
 }

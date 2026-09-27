@@ -115,9 +115,10 @@ endif()
 find_program(PUNCOVER puncover)
 
 if(NOT ${PUNCOVER} STREQUAL PUNCOVER-NOTFOUND)
-  set(PUNCOVER_ARGS "")
+  zephyr_get(EXTRA_PUNCOVER_ARGS)
   zephyr_get(PUNCOVER_PORT)
   zephyr_get(PUNCOVER_HOST)
+  set(PUNCOVER_ARGS ${EXTRA_PUNCOVER_ARGS})
   if(DEFINED PUNCOVER_PORT)
     list(APPEND PUNCOVER_ARGS "--port=${PUNCOVER_PORT}")
   endif()
@@ -156,3 +157,17 @@ if(NOT ${PAHOLE} STREQUAL PAHOLE-NOTFOUND)
     USES_TERMINAL
     )
 endif()
+
+add_custom_target(
+  dashboard
+  ${PYTHON_EXECUTABLE}
+  ${ZEPHYR_BASE}/scripts/dashboard/dashboard.py
+  --output ${CMAKE_BINARY_DIR}/dashboard
+  --zephyr-base ${ZEPHYR_BASE}
+  --kernel-bin-name ${CONFIG_KERNEL_BIN_NAME}
+  --open
+  ${CMAKE_BINARY_DIR}
+  DEPENDS ${logical_target_for_zephyr_elf}
+  USES_TERMINAL
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )

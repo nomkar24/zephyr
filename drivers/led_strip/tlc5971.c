@@ -32,7 +32,7 @@ struct tlc5971_data {
 };
 
 /** SPI operation word constant, SPI mode 0, CPOL = 0, CPHA = 0 */
-#define TLC5971_SPI_OPERATION (SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8))
+#define TLC5971_SPI_OPERATION (SPI_OP_MODE_CONTROLLER | SPI_TRANSFER_MSB | SPI_WORD_SET(8))
 
 /** Number of supported colors */
 #define TLC5971_NUMBER_OF_COLORS 3
@@ -40,7 +40,7 @@ struct tlc5971_data {
 /**
  * @brief Number of RGB pixels per TLC5791 device
  *
- * The TLC5971 has 4x RGB outputs per device, where each RGB group constitues a pixel from this
+ * The TLC5971 has 4x RGB outputs per device, where each RGB group constitutes a pixel from this
  * drivers point of view.
  */
 #define TLC5971_PIXELS_PER_DEVICE 4

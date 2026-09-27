@@ -6,6 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef ZEPHYR_INCLUDE_ARCH_ARM_MPU_ARM_MPU_V8_H_
+#define ZEPHYR_INCLUDE_ARCH_ARM_MPU_ARM_MPU_V8_H_
+
 #ifndef _ASMLANGUAGE
 
 /* Convenience macros to represent the ARMv8-M-specific
@@ -267,6 +270,17 @@
 		.r_limit = REGION_LIMIT_ADDR(base, size),               /* Region Limit */         \
 		IF_ENABLED(CONFIG_ARM_MPU_PXN, (.pxn = PRIV_EXEC_NEVER,))                          \
 	}
+
+/** This attribute allows for execution from RAM region even when CONFIG_XIP=y in
+ * case the region is used for code relocation.
+ */
+#define REGION_RAM_ATTR_WITH_EXEC(base, size)                                  \
+	{                                                                          \
+		.rbar =  P_RW_U_NA_Msk | NON_SHAREABLE_Msk,    /* AP, SH */            \
+		.mair_idx = MPU_MAIR_INDEX_SRAM,               /* Cache-ability */     \
+		.r_limit = REGION_LIMIT_ADDR(base, size),      /* Region Limit */      \
+		IF_ENABLED(CONFIG_ARM_MPU_PXN, (.pxn = !PRIV_EXEC_NEVER,))             \
+	}
 /** @endcond */
 
 #if defined(CONFIG_ARM_MPU_PXN)
@@ -463,3 +477,5 @@ typedef struct {
 		     "The start and size of the partition must align with the minimum MPU "        \
 		     "region size.")
 #endif /* defined(__IAR_SYSTEMS_ICC__) */
+
+#endif /* ZEPHYR_INCLUDE_ARCH_ARM_MPU_ARM_MPU_V8_H_ */

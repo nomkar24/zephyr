@@ -22,7 +22,7 @@
 #include <hal/nrf_nfct.h>
 #include <lib/nrfx_coredep.h>
 #include <soc_lrcconf.h>
-#include <haltium_power.h>
+#include "soc_power.h"
 #include <dmm.h>
 
 #if defined(CONFIG_SOC_NRF54H20_CPURAD_ENABLE)
@@ -43,11 +43,11 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 #define FLASH_LOAD_ADDRESS (CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET)
 #endif
 
-#define FIXED_PARTITION_IS_RUNNING_APP_PARTITION(label)                                            \
-	DT_SAME_NODE(FIXED_PARTITION_NODE_MTD(DT_CHOSEN(zephyr_code_partition)),                   \
-		     FIXED_PARTITION_MTD(label)) &&                                                \
-		(FIXED_PARTITION_ADDRESS(label) <= FLASH_LOAD_ADDRESS &&                           \
-		 FIXED_PARTITION_ADDRESS(label) + FIXED_PARTITION_SIZE(label) >                    \
+#define PARTITION_IS_RUNNING_APP_PARTITION(label)                                            \
+	DT_SAME_NODE(PARTITION_NODE_MTD(DT_CHOSEN(zephyr_code_partition)),                   \
+		     PARTITION_MTD(label)) &&                                                \
+		(PARTITION_ADDRESS(label) <= FLASH_LOAD_ADDRESS &&                           \
+		 PARTITION_ADDRESS(label) + PARTITION_SIZE(label) >                    \
 			 FLASH_LOAD_ADDRESS)
 
 #define FICR_ADDR_GET(node_id, name)                                           \
@@ -94,7 +94,7 @@ static int trim_hsfll(void)
 	return 0;
 }
 
-#if defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_HOOK)
+#if defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_HOOK) && !defined(CONFIG_NRF_CUSTOM_ON_ENTER_CPU_IDLE_HOOK)
 bool z_arm_on_enter_cpu_idle(void)
 {
 #ifdef CONFIG_LOG_FRONTEND_STMESP
@@ -152,16 +152,16 @@ void soc_late_init_hook(void)
 	void *radiocore_address = NULL;
 
 #if DT_NODE_EXISTS(DT_NODELABEL(cpurad_slot1_partition))
-	if (FIXED_PARTITION_IS_RUNNING_APP_PARTITION(cpuapp_slot1_partition)) {
-		radiocore_address = (void *)(FIXED_PARTITION_ADDRESS(cpurad_slot1_partition) +
+	if (PARTITION_IS_RUNNING_APP_PARTITION(cpuapp_slot1_partition)) {
+		radiocore_address = (void *)(PARTITION_ADDRESS(cpurad_slot1_partition) +
 					     CONFIG_ROM_START_OFFSET);
 	} else {
-		radiocore_address = (void *)(FIXED_PARTITION_ADDRESS(cpurad_slot0_partition) +
+		radiocore_address = (void *)(PARTITION_ADDRESS(cpurad_slot0_partition) +
 					     CONFIG_ROM_START_OFFSET);
 	}
 #else
 	radiocore_address =
-		(void *)(FIXED_PARTITION_ADDRESS(cpurad_slot0_partition) + CONFIG_ROM_START_OFFSET);
+		(void *)(PARTITION_ADDRESS(cpurad_slot0_partition) + CONFIG_ROM_START_OFFSET);
 #endif
 
 	if (IS_ENABLED(CONFIG_SOC_NRF54H20_CPURAD_ENABLE_CHECK_VTOR) &&

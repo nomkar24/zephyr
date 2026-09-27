@@ -22,7 +22,7 @@ LOG_MODULE_REGISTER(sdhc_spi, CONFIG_SDHC_LOG_LEVEL);
 #define SPI_R1B_TIMEOUT_MS 3000
 #define SD_SPI_SKIP_RETRIES 1000000
 
-#define _INST_REQUIRES_EXPLICIT_FF(inst) (SPI_MOSI_OVERRUN_DT(DT_INST_BUS(inst)) != 0xFF) ||
+#define _INST_REQUIRES_EXPLICIT_FF(inst) (SPI_SDO_OVERRUN_DT(DT_INST_BUS(inst)) != 0xFF) ||
 
 /* The SD protocol requires sending ones while reading but the Zephyr
  * SPI API defers the choice of default values to the drivers.
@@ -374,7 +374,7 @@ static int sdhc_spi_send_cmd(const struct device *dev, struct sdhc_command *cmd,
 	 */
 
 	/* Note: we can discard CMD data as we send it,
-	 * so resuse the TX buf as RX
+	 * so reuse the TX buf as RX
 	 */
 	struct spi_buf bufs[] = {
 		{

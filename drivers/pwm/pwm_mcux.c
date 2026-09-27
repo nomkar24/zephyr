@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019, Linaro
- * Copyright 2025 NXP
+ * Copyright 2025-2026 NXP
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -304,6 +304,36 @@ static int mcux_pwm_calc_ticks(uint16_t first_capture, uint16_t second_capture, 
 	return 0;
 }
 
+static void mcux_pwm_handle_capture(const struct device *dev, uint16_t first_edge_value,
+				    uint16_t second_edge_value, uint16_t modValue,
+				    int overflow_err)
+{
+	struct pwm_mcux_data *data = dev->data;
+	struct pwm_mcux_capture_data *capture = &data->capture;
+	uint32_t ticks = 0;
+	int err = overflow_err;
+
+	if (err != 0) {
+		LOG_ERR("overflow_count overflows.");
+	} else {
+		err = mcux_pwm_calc_ticks(first_edge_value, second_edge_value, modValue,
+				capture->overflow_count, &ticks);
+		LOG_DBG("First edge capture: %u, second edge capture: %u,"
+			" overflow: %u, ticks: %u", first_edge_value,
+			second_edge_value, capture->overflow_count, ticks);
+	}
+
+	if (capture->pulse_capture) {
+		capture->callback(dev, capture->capture_channel, 0, ticks, err,
+				capture->user_data);
+	} else {
+		capture->callback(dev, capture->capture_channel, ticks, 0, err,
+				capture->user_data);
+	}
+
+	capture->overflow_count = 0;
+}
+
 static void mcux_pwm_isr(const struct device *dev)
 {
 	const struct pwm_mcux_config *config = dev->config;
@@ -312,7 +342,6 @@ static void mcux_pwm_isr(const struct device *dev)
 	uint32_t status;
 	uint16_t first_edge_value;
 	uint16_t second_edge_value;
-	uint32_t ticks = 0;
 	int err = 0;
 
 	uint16_t modValue = config->base->SM[config->index].VAL1 -
@@ -325,32 +354,61 @@ static void mcux_pwm_isr(const struct device *dev)
 		err = u32_add_overflow(capture->overflow_count, 1, &capture->overflow_count);
 	}
 
-	if (status & kPWM_CaptureX0Flag) {
-		capture->overflow_count = 0;
-	}
+	switch (capture->capture_channel) {
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA == 1U)
+	case 0:
+		/* Channel A */
+		if (status & kPWM_CaptureA0Flag) {
+			capture->overflow_count = 0;
+		}
 
-	if (status & kPWM_CaptureX1Flag) {
-		if (err != 0) {
-			LOG_ERR("overflow_count overflows.");
-		} else {
+		if (status & kPWM_CaptureA1Flag) {
+			first_edge_value = config->base->SM[config->index].CVAL2;
+			second_edge_value = config->base->SM[config->index].CVAL3;
+			LOG_DBG("Channel A captured.");
+			mcux_pwm_handle_capture(dev, first_edge_value, second_edge_value,
+				modValue, err);
+		}
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB == 1U)
+	case 1:
+		/* Channel B */
+		if (status & kPWM_CaptureB0Flag) {
+			capture->overflow_count = 0;
+		}
+
+		if (status & kPWM_CaptureB1Flag) {
+			first_edge_value = config->base->SM[config->index].CVAL4;
+			second_edge_value = config->base->SM[config->index].CVAL5;
+			LOG_DBG("Channel B captured.");
+			mcux_pwm_handle_capture(dev, first_edge_value, second_edge_value,
+						modValue, err);
+		}
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX == 1U)
+	case 2:
+		/* Channel X */
+		if (status & kPWM_CaptureX0Flag) {
+			capture->overflow_count = 0;
+		}
+
+		if (status & kPWM_CaptureX1Flag) {
 			first_edge_value = config->base->SM[config->index].CVAL0;
 			second_edge_value = config->base->SM[config->index].CVAL1;
-			err = mcux_pwm_calc_ticks(first_edge_value, second_edge_value, modValue,
-					capture->overflow_count, &ticks);
-			LOG_DBG("First edge capture: %d, second edge capture: %d,"
-				"overflow: %d, ticks: %d", first_edge_value, second_edge_value,
-				capture->overflow_count, ticks);
+			LOG_DBG("Channel X captured.");
+			mcux_pwm_handle_capture(dev, first_edge_value, second_edge_value,
+						modValue, err);
 		}
-
-		if (capture->pulse_capture) {
-			capture->callback(dev, capture->capture_channel, 0, ticks, err,
-					capture->user_data);
-		} else {
-			capture->callback(dev, capture->capture_channel, ticks, 0, err,
-					capture->user_data);
-		}
-
-		capture->overflow_count = 0;
+		break;
+#endif
+	default:
+		/* unsupported channel for this SoC: check_channel() should have rejected it */
+		break;
 	}
 }
 
@@ -464,11 +522,14 @@ static int mcux_pwm_configure_capture(const struct device *dev,
 	/* Setup input capture on channel */
 	PWM_SetupInputCapture(config->base, config->index, pwm_channel, &capture_config);
 
+#if defined(FSL_FEATURE_PWM_HAS_INPUT_FILTER_CAPTURE) && \
+	(FSL_FEATURE_PWM_HAS_INPUT_FILTER_CAPTURE == 1U)
 	/* Set capture filter */
 	PWM_SetFilterSampleCount(config->base, pwm_channel, config->index,
 		config->input_filter_count);
 	PWM_SetFilterSamplePeriod(config->base, pwm_channel, config->index,
 		config->input_filter_period);
+#endif
 
 	return 0;
 }
@@ -501,16 +562,41 @@ static int mcux_pwm_enable_capture(const struct device *dev, uint32_t channel)
 	 */
 	status = PWM_GetStatusFlags(config->base, config->index);
 	PWM_ClearStatusFlags(config->base, config->index, status);
-
-	if (channel == 0U) {
+	/* Enable interrupt and clear the capture FIFOs by reading them */
+	switch (channel) {
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA == 1U)
+	case 0U:
+		/* Channel A */
+		(void)config->base->SM[config->index].CVAL2;
+		(void)config->base->SM[config->index].CVAL3;
 		PWM_EnableInterrupts(config->base, config->index, kPWM_CaptureA0InterruptEnable |
 			kPWM_CaptureA1InterruptEnable | kPWM_ReloadInterruptEnable);
-	} else if (channel == 1U) {
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB == 1U)
+	case 1U:
+		/* Channel B */
+		(void)config->base->SM[config->index].CVAL4;
+		(void)config->base->SM[config->index].CVAL5;
 		PWM_EnableInterrupts(config->base, config->index, kPWM_CaptureB0InterruptEnable |
 			kPWM_CaptureB1InterruptEnable | kPWM_ReloadInterruptEnable);
-	} else {
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX == 1U)
+	case 2U:
+		/* Channel X */
+		(void)config->base->SM[config->index].CVAL0;
+		(void)config->base->SM[config->index].CVAL1;
 		PWM_EnableInterrupts(config->base, config->index, kPWM_CaptureX0InterruptEnable |
 			kPWM_CaptureX1InterruptEnable | kPWM_ReloadInterruptEnable);
+		break;
+#endif
+	default:
+		/* unsupported channel for this SoC: check_channel() should have rejected it */
+		break;
 	}
 
 	/* Start the PWM counter if it's stopped.*/
@@ -533,15 +619,34 @@ static int mcux_pwm_disable_capture(const struct device *dev, uint32_t channel)
 	}
 
 	/* Disable capture interrupts */
-	if (channel == 0U) {
+	switch (channel) {
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELA == 1U)
+	case 0U:
+		/* Channel A */
 		PWM_DisableInterrupts(config->base, config->index, kPWM_CaptureA0InterruptEnable |
 			kPWM_CaptureA1InterruptEnable | kPWM_ReloadInterruptEnable);
-	} else if (channel == 1U) {
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELB == 1U)
+	case 1U:
+		/* Channel B */
 		PWM_DisableInterrupts(config->base, config->index, kPWM_CaptureB0InterruptEnable |
 			kPWM_CaptureB1InterruptEnable | kPWM_ReloadInterruptEnable);
-	} else {
+		break;
+#endif
+#if defined(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX) && \
+	(FSL_FEATURE_PWM_HAS_CAPTURE_ON_CHANNELX == 1U)
+	case 2U:
+		/* Channel X */
 		PWM_DisableInterrupts(config->base, config->index, kPWM_CaptureX0InterruptEnable |
 			kPWM_CaptureX1InterruptEnable | kPWM_ReloadInterruptEnable);
+		break;
+#endif
+	default:
+		/* unsupported channel for this SoC: check_channel() should have rejected it */
+		break;
 	}
 
 	data->capture_active = false;

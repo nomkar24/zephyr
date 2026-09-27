@@ -16,10 +16,11 @@ LOG_MODULE_REGISTER(spi_sy1xx);
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/sys/minmax.h>
 #include <zephyr/sys/util.h>
 #include <udma.h>
 #include <zephyr/drivers/pinctrl.h>
-#include "zephyr/sys/byteorder.h"
+#include <zephyr/sys/byteorder.h>
 
 /* SPI udma command interface definitions */
 #define SPI_CMD_OFFSET (4)
@@ -172,16 +173,16 @@ static int sy1xx_spi_configure(const struct device *dev, const struct spi_config
 
 	if (!spi_cs_is_gpio(config)) {
 		/* if cs0 and cs1 are not real gpios, that indicates, we are using the hw cs */
-		if (config->slave > 1U) {
+		if (config->peripheral > 1U) {
 			return -EINVAL;
 		}
-		data->cs_pin = (int32_t)config->slave;
+		data->cs_pin = (int32_t)config->peripheral;
 	} else {
 		data->cs_pin = -1;
 	}
 
-	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_MASTER) {
-		/* Slave mode is not implemented. */
+	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_CONTROLLER) {
+		/* Peripheral mode is not implemented. */
 		return -ENOTSUP;
 	}
 
@@ -300,8 +301,8 @@ static int32_t sy1xx_spi_full_duplex_transfer_ctx(const struct device *dev)
 
 	buf = &data->dma->write[0];
 
-	/* expected data config (bit-len in bits) and spi transfer type */
-	sys_put_le16(xfer_len * SY1XX_SPI_WORD_SIZE_8_BIT, &buf[0]);
+	/* expected data config (bit-len in bits - 1) and spi transfer type */
+	sys_put_le16(xfer_len * SY1XX_SPI_WORD_SIZE_8_BIT - 1, &buf[0]);
 	buf[2] = SPI_CMD_FULL_DPLX_DATA1();
 	buf[3] = SPI_CMD_FULL_DPLX_DATA0(SY1XX_SPI_WORD_ALIGN);
 

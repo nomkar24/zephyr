@@ -44,7 +44,8 @@
 			device_type = "cpu";
 			clocks = <&hfpll>;
 			riscv,isa-base = "rv32e";
-			riscv,isa-extensions = "e", "m", "c", "zicsr";
+			riscv,isa-extensions = "e", "m", "c", "zicsr",
+					       "zba", "zbb", "zbc", "zbs", "zcb";
 			nordic,bus-width = <32>;
 		};
 	};
@@ -86,6 +87,9 @@
 		uicr: uicr@ffd000 {
 			compatible = "nordic,nrf-uicr";
 			reg = <0xffd000 0x1000>;
+			ranges = <0x0 0xffd000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 #endif
 
@@ -175,6 +179,7 @@
 				#size-cells = <1>;
 				status = "disabled";
 				enable-secure;
+				hibernation-ram-block = <32>;
 
 				cpuflpr_clic: interrupt-controller@f0000000 {
 					compatible = "nordic,nrf-clic";
@@ -194,6 +199,7 @@
 				ngpios = <11>;
 				status = "disabled";
 				port = <2>;
+				hspadctrl-supported;
 			};
 
 			timer00: timer@55000 {
@@ -308,6 +314,7 @@
 				reg = <0xc6000 0x1000>;
 				interrupts = <198 NRF_DEFAULT_IRQ_PRIORITY>;
 				easydma-maxcnt-bits = <16>;
+				clock-tolerance-percent = <6>;
 				status = "disabled";
 				zephyr,pm-device-runtime-auto;
 			};
@@ -347,6 +354,7 @@
 				reg = <0xc7000 0x1000>;
 				interrupts = <199 NRF_DEFAULT_IRQ_PRIORITY>;
 				easydma-maxcnt-bits = <16>;
+				clock-tolerance-percent = <6>;
 				status = "disabled";
 				zephyr,pm-device-runtime-auto;
 			};
@@ -386,6 +394,7 @@
 				reg = <0xc8000 0x1000>;
 				interrupts = <200 NRF_DEFAULT_IRQ_PRIORITY>;
 				easydma-maxcnt-bits = <16>;
+				clock-tolerance-percent = <6>;
 				status = "disabled";
 				zephyr,pm-device-runtime-auto;
 			};
@@ -526,7 +535,7 @@
 			};
 
 			nfct: nfct@d6000 {
-				compatible = "nordic,nrf-nfct";
+				compatible = "nordic,nrf-nfct-v2";
 				reg = <0xd6000 0x1000>;
 				interrupts = <214 NRF_DEFAULT_IRQ_PRIORITY>;
 				status = "disabled";
@@ -612,6 +621,7 @@
 				reg = <0x104000 0x1000>;
 				interrupts = <260 NRF_DEFAULT_IRQ_PRIORITY>;
 				easydma-maxcnt-bits = <16>;
+				clock-tolerance-percent = <6>;
 				status = "disabled";
 				zephyr,pm-device-runtime-auto;
 			};
@@ -649,6 +659,18 @@
 				reg = <0x10e000 0x1000>;
 				interrupts = <261 NRF_DEFAULT_IRQ_PRIORITY>;
 				status = "disabled";
+
+				xo: xo {
+					compatible = "nordic,nrf-clock-xo";
+					status = "disabled";
+					clock-frequency = <DT_FREQ_M(32)>;
+					#clock-cells = <0>;
+				};
+
+				lfclk: lfclk {
+					compatible = "nordic,nrf-clock-lfclk";
+					status = "disabled";
+				};
 			};
 
 			power: power@10e000 {
@@ -744,6 +766,7 @@
 		rram_controller: rram-controller@5004b000 {
 			compatible = "nordic,rram-controller";
 			reg = <0x5004b000 0x1000>;
+			ranges;
 			#address-cells = <1>;
 			#size-cells = <1>;
 			interrupts = <75 NRF_DEFAULT_IRQ_PRIORITY>;
@@ -752,6 +775,7 @@
 				compatible = "soc-nv-flash";
 				erase-block-size = <4096>;
 				write-block-size = <16>;
+				status = "okay";
 				#address-cells = <1>;
 				#size-cells = <1>;
 			};
@@ -787,3 +811,25 @@
 		};
 	};
 };
+
+#ifndef USE_NON_SECURE_ADDRESS_MAP
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/*
+		 * The KMU pushes keys to a fixed address at the start of SRAM,
+		 * so this area is not available to the application. When
+		 * building with TF-M the area is part of the SRAM partition
+		 * owned by the secure image instead.
+		 */
+		kmu_push_area: memory@20000000 {
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x20000000 0x60>;
+			zephyr,memory-region = "KMU_PUSH";
+		};
+	};
+};
+#endif

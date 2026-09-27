@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2026 Infineon Technologies AG,
- * or an affiliate of Infineon Technologies AG.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+ * SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,6 +13,7 @@
 
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/pm/device.h>
 
 #include <infineon_kconfig.h>
 #include <zephyr/drivers/timer/ifx_tcpwm.h>
@@ -24,6 +25,17 @@
 #include <cy_sysclk.h>
 
 #include <zephyr/logging/log.h>
+
+#ifdef CONFIG_PWM_EVENT
+#include <zephyr/drivers/pwm/pwm_utils.h>
+#include <zephyr/irq.h>
+#include <zephyr/spinlock.h>
+
+/* Infineon TCPWM PWM channels are single-channel */
+#define IFX_TCPWM_PWM_CH 0
+
+#endif /* CONFIG_PWM_EVENT */
+
 LOG_MODULE_REGISTER(pwm_ifx_tcpwm, CONFIG_PWM_LOG_LEVEL);
 
 struct ifx_tcpwm_pwm_config {
@@ -37,6 +49,22 @@ struct ifx_tcpwm_pwm_config {
 
 struct ifx_tcpwm_pwm_data {
 	struct ifx_cat1_clock clock;
+#ifdef CONFIG_PM_DEVICE
+	/* Last values programmed via set_cycles, replayed on resume to
+	 * restore the PWM after DS-RAM (all peripheral state lost).
+	 */
+	uint32_t last_period_cycles;
+	uint32_t last_pulse_cycles;
+	pwm_flags_t last_flags;
+	/* Whether the counter was running when suspend was entered, so
+	 * resume only restarts a PWM that was previously active.
+	 */
+	bool was_running;
+#endif /* CONFIG_PM_DEVICE */
+#ifdef CONFIG_PWM_EVENT
+	sys_slist_t event_callbacks;
+	struct k_spinlock lock;
+#endif /* CONFIG_PWM_EVENT */
 };
 
 static int ifx_tcpwm_pwm_init(const struct device *dev)
@@ -86,6 +114,9 @@ static int ifx_tcpwm_pwm_set_cycles(const struct device *dev, uint32_t channel,
 	ARG_UNUSED(channel);
 
 	const struct ifx_tcpwm_pwm_config *config = dev->config;
+#ifdef CONFIG_PM_DEVICE
+	struct ifx_tcpwm_pwm_data *const data = dev->data;
+#endif /* CONFIG_PM_DEVICE */
 	uint32_t pwm_status;
 	uint32_t ctrl_temp;
 
@@ -124,7 +155,7 @@ static int ifx_tcpwm_pwm_set_cycles(const struct device *dev, uint32_t channel,
 	}
 
 	/* Special case, if period_cycles is 0, set the period and compare to zero.  If we were to
-	 * disable the PWM, the output would be set to High-Z, wheras this will set the output to
+	 * disable the PWM, the output would be set to High-Z, whereas this will set the output to
 	 * the zero duty cycle state instead.
 	 */
 	if (period_cycles == 0) {
@@ -149,6 +180,14 @@ static int ifx_tcpwm_pwm_set_cycles(const struct device *dev, uint32_t channel,
 	/* Start the TCPWM block */
 	IFX_TCPWM_TriggerStart_Single(config->reg_base);
 
+#ifdef CONFIG_PM_DEVICE
+	/* Cache the request so it can be replayed on resume after DS-RAM. */
+	data->last_period_cycles = period_cycles;
+	data->last_pulse_cycles = pulse_cycles;
+	data->last_flags = flags;
+	data->was_running = true;
+#endif /* CONFIG_PM_DEVICE */
+
 	return 0;
 }
 
@@ -165,34 +204,181 @@ static int ifx_tcpwm_pwm_get_cycles_per_sec(const struct device *dev, uint32_t c
 	return 0;
 }
 
+#ifdef CONFIG_PWM_EVENT
+static void ifx_tcpwm_pwm_isr(const struct device *dev)
+{
+	const struct ifx_tcpwm_pwm_config *config = dev->config;
+	struct ifx_tcpwm_pwm_data *data = dev->data;
+	uint32_t pending;
+
+	pending = IFX_TCPWM_GetInterruptStatusMasked(config->reg_base);
+	IFX_TCPWM_ClearInterrupt(config->reg_base, pending);
+
+	if ((pending & CY_TCPWM_INT_ON_TC) != 0) {
+		pwm_fire_event_callbacks(&data->event_callbacks, dev, IFX_TCPWM_PWM_CH,
+					 PWM_EVENT_TYPE_PERIOD);
+	}
+
+	if ((pending & CY_TCPWM_INT_ON_CC0) != 0) {
+		pwm_fire_event_callbacks(&data->event_callbacks, dev, IFX_TCPWM_PWM_CH,
+					 PWM_EVENT_TYPE_COMPARE_CAPTURE);
+	}
+}
+
+static void ifx_tcpwm_pwm_update_interrupts(const struct device *dev)
+{
+	const struct ifx_tcpwm_pwm_config *config = dev->config;
+	struct ifx_tcpwm_pwm_data *data = dev->data;
+	struct pwm_event_callback *cb;
+	struct pwm_event_callback *tmp;
+	uint32_t mask = CY_TCPWM_INT_NONE;
+
+	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&data->event_callbacks, cb, tmp, node) {
+		if ((cb->event_mask & PWM_EVENT_TYPE_PERIOD) != 0) {
+			mask |= CY_TCPWM_INT_ON_TC;
+		}
+		if ((cb->event_mask & PWM_EVENT_TYPE_COMPARE_CAPTURE) != 0) {
+			mask |= CY_TCPWM_INT_ON_CC0;
+		}
+	}
+
+	IFX_TCPWM_ClearInterrupt(config->reg_base, mask);
+	IFX_TCPWM_SetInterruptMask(config->reg_base, mask);
+}
+
+static int ifx_tcpwm_pwm_manage_event_callback(const struct device *dev,
+					       struct pwm_event_callback *callback, bool set)
+{
+	struct ifx_tcpwm_pwm_data *data = dev->data;
+	int ret;
+
+	ret = pwm_manage_event_callback(&data->event_callbacks, callback, set);
+	if (ret < 0) {
+		return ret;
+	}
+
+	K_SPINLOCK(&data->lock) {
+		ifx_tcpwm_pwm_update_interrupts(dev);
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PWM_EVENT */
+
+#ifdef CONFIG_PM_DEVICE
+static int ifx_tcpwm_pwm_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	const struct ifx_tcpwm_pwm_config *config = dev->config;
+	struct ifx_tcpwm_pwm_data *const data = dev->data;
+	int ret;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		/* Clock gate the block; clock tree left untouched. */
+		IFX_TCPWM_PWM_Disable(config->reg_base);
+		break;
+	case PM_DEVICE_ACTION_RESUME:
+		IFX_TCPWM_PWM_Enable(config->reg_base);
+		/* Restart the PWM if it was running before suspend. */
+		if (data->was_running) {
+			ret = ifx_tcpwm_pwm_set_cycles(dev, 0, data->last_period_cycles,
+						       data->last_pulse_cycles, data->last_flags);
+			if (ret < 0) {
+				return ret;
+			}
+		}
+		break;
+#if defined(CONFIG_PM_S2RAM) || defined(CONFIG_PM_DEVICE_POWER_DOMAIN)
+	case PM_DEVICE_ACTION_TURN_ON:
+		/* Power was removed so re-initialize the peripheral */
+		ret = ifx_tcpwm_pwm_init(dev);
+		if (ret < 0) {
+			return ret;
+		}
+		break;
+#endif /* CONFIG_PM_S2RAM || CONFIG_PM_DEVICE_POWER_DOMAIN */
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PM_DEVICE */
+
 static DEVICE_API(pwm, ifx_tcpwm_pwm_api) = {
 	.set_cycles = ifx_tcpwm_pwm_set_cycles,
 	.get_cycles_per_sec = ifx_tcpwm_pwm_get_cycles_per_sec,
+#ifdef CONFIG_PWM_EVENT
+	.manage_event_callback = ifx_tcpwm_pwm_manage_event_callback,
+#endif /* CONFIG_PWM_EVENT */
 };
 
+/*
+ * Initialize the peripheral clock divider from devicetree.
+ *
+ * PSoC Edge SoCs require an extra peri_group index argument to
+ * IFX_CAT1_PERIPHERAL_GROUP_ADJUST, so the two variants are selected
+ * at compile time based on CONFIG_SOC_FAMILY_INFINEON_EDGE.
+ */
 #if defined(CONFIG_SOC_FAMILY_INFINEON_EDGE)
 #define PWM_PERI_CLOCK_INIT(n)                                                                     \
-	.clock =                                                                                   \
-		{                                                                                  \
-			.block = IFX_CAT1_PERIPHERAL_GROUP_ADJUST(                                 \
-				DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 0),         \
-				DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 1),         \
-				DT_INST_PROP_BY_PHANDLE(n, clocks, div_type)),                     \
-			.channel = DT_INST_PROP_BY_PHANDLE(n, clocks, channel),                    \
-		}
+	.clock = {                                                                                 \
+		.block = IFX_CAT1_PERIPHERAL_GROUP_ADJUST(                                         \
+			DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 0),                 \
+			DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 1),                 \
+			DT_INST_PROP_BY_PHANDLE(n, clocks, div_type)),                             \
+		.channel = DT_INST_PROP_BY_PHANDLE(n, clocks, channel),                            \
+	}
 #else
 #define PWM_PERI_CLOCK_INIT(n)                                                                     \
-	.clock =                                                                                   \
-		{                                                                                  \
-			.block = IFX_CAT1_PERIPHERAL_GROUP_ADJUST(                                 \
-				DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 1),         \
-				DT_INST_PROP_BY_PHANDLE(n, clocks, div_type)),                     \
-			.channel = DT_INST_PROP_BY_PHANDLE(n, clocks, channel),                    \
-		}
+	.clock = {                                                                                 \
+		.block = IFX_CAT1_PERIPHERAL_GROUP_ADJUST(                                         \
+			DT_PROP_BY_IDX(DT_INST_PHANDLE(n, clocks), peri_group, 1),                 \
+			DT_INST_PROP_BY_PHANDLE(n, clocks, div_type)),                             \
+		.channel = DT_INST_PROP_BY_PHANDLE(n, clocks, channel),                            \
+	}
 #endif
 
+/*
+ * Per-instance wrapper init for PWM event support.
+ *
+ * IRQ_CONNECT requires compile-time constant arguments derived from the
+ * devicetree instance index (n).  This macro generates a wrapper that
+ * calls the main init function first, configures the interrupt.  This avoids
+ * duplicating the bulk ofg the init logic for every pwm instance.
+ */
+#define INFINEON_TCPWM_PWM_IRQ_INIT(n)                                                             \
+	static int ifx_tcpwm_pwm_init_##n(const struct device *dev)                                \
+	{                                                                                          \
+		int ret;                                                                           \
+                                                                                                   \
+		ret = ifx_tcpwm_pwm_init(dev);                                                     \
+		if (ret < 0) {                                                                     \
+			return ret;                                                                \
+		}                                                                                  \
+		IRQ_CONNECT(DT_IRQN(DT_INST_PARENT(n)), DT_IRQ(DT_INST_PARENT(n), priority),       \
+			    ifx_tcpwm_pwm_isr, DEVICE_DT_INST_GET(n), 0);                          \
+		irq_enable(DT_IRQN(DT_INST_PARENT(n)));                                            \
+		return 0;                                                                          \
+	}
+
+/* clang-format off */
+/*
+ * Per-instance device instantiation macro.
+ *
+ * Defines pinctrl state, mutable driver data, immutable config, and
+ * registers the device.  When CONFIG_PWM_EVENT is enabled, the IRQ
+ * wrapper init function is also emitted via INFINEON_TCPWM_PWM_IRQ_INIT.
+ *
+ * In the DEVICE_DT_INST_DEFINE below, the COND_CODE_1 macro is used to
+ * use the wrapper init function when CONFIG_PWM_EVENT is enabled and use
+ * the main init function otherwise.
+ */
 #define INFINEON_TCPWM_PWM_INIT(n)                                                                 \
+	IF_ENABLED(CONFIG_PWM_EVENT, (INFINEON_TCPWM_PWM_IRQ_INIT(n)))                             \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
+                                                                                                   \
+	PM_DEVICE_DT_INST_DEFINE(n, ifx_tcpwm_pwm_pm_action);                                      \
                                                                                                    \
 	static struct ifx_tcpwm_pwm_data ifx_tcpwm_pwm##n##_data = {PWM_PERI_CLOCK_INIT(n)};       \
                                                                                                    \
@@ -210,8 +396,10 @@ static DEVICE_API(pwm, ifx_tcpwm_pwm_api) = {
 		.clk_dst = DT_PROP(DT_INST_PARENT(n), clk_dst),                                    \
 	};                                                                                         \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(n, ifx_tcpwm_pwm_init, NULL, &ifx_tcpwm_pwm##n##_data,               \
-			      &pwm_tcpwm_config_##n, POST_KERNEL, CONFIG_PWM_INIT_PRIORITY,        \
-			      &ifx_tcpwm_pwm_api);
+	DEVICE_DT_INST_DEFINE(                                                                     \
+		n, COND_CODE_1(CONFIG_PWM_EVENT, (ifx_tcpwm_pwm_init_##n), (ifx_tcpwm_pwm_init)),  \
+		PM_DEVICE_DT_INST_GET(n), &ifx_tcpwm_pwm##n##_data, &pwm_tcpwm_config_##n,         \
+		POST_KERNEL, CONFIG_PWM_INIT_PRIORITY, &ifx_tcpwm_pwm_api);
+/* clang-format on */
 
 DT_INST_FOREACH_STATUS_OKAY(INFINEON_TCPWM_PWM_INIT)

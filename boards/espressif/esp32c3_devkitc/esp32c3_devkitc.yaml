@@ -18,4 +18,6 @@ supported:
   - entropy
   - crypto
   - retained_mem
+  - netif:wifi
+  - pulse_io
 vendor: espressif

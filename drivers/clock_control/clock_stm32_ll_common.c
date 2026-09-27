@@ -314,13 +314,13 @@ int enabled_clock(uint32_t src_clk)
 		}
 		break;
 #endif /* STM32_SRC_PLLSAI2_R */
-#if defined(STM32_SRC_PLLSAI2_DIVR)
-	case STM32_SRC_PLLSAI2_DIVR:
+#if defined(STM32_SRC_PLLSAI2_POST_R)
+	case STM32_SRC_PLLSAI2_POST_R:
 		if (!IS_ENABLED(STM32_PLLSAI2_R_ENABLED)) {
 			r = -ENOTSUP;
 		}
 		break;
-#endif /* STM32_SRC_PLLSAI2_DIVR */
+#endif /* STM32_SRC_PLLSAI2_POST_R */
 #if defined(STM32_SRC_PLL2CLK)
 	case STM32_SRC_PLL2CLK:
 		if (!IS_ENABLED(STM32_PLL2_ENABLED)) {
@@ -354,16 +354,17 @@ int enabled_clock(uint32_t src_clk)
 	return r;
 }
 
+static int stm32_clock_control_configure(const struct device *dev,
+					 clock_control_subsys_t sub_system, void *data);
+
 static int stm32_clock_control_on(const struct device *dev, clock_control_subsys_t sub_system)
 {
 	struct stm32_pclken *pclken = (struct stm32_pclken *)(sub_system);
 	volatile int temp;
 
-	ARG_UNUSED(dev);
-
 	if (!IN_RANGE(pclken->bus, STM32_PERIPH_BUS_MIN, STM32_PERIPH_BUS_MAX)) {
-		/* Attempt to change a wrong periph clock bit */
-		return -ENOTSUP;
+		/* Source selection entry: apply it instead of toggling a gate */
+		return stm32_clock_control_configure(dev, sub_system, NULL);
 	}
 
 	sys_set_bits(DT_REG_ADDR(DT_NODELABEL(rcc)) + pclken->bus,
@@ -666,16 +667,15 @@ static int stm32_clock_control_get_subsys_rate(const struct device *clock,
 					      STM32_PLLSAI2_R_DIVISOR);
 		break;
 #endif /* STM32_SRC_PLLSAI2_R */
-#if defined(STM32_SRC_PLLSAI2_DIVR) && STM32_PLLSAI2_R_ENABLED && STM32_PLLSAI2_DIVR_ENABLED && \
-	defined(STM32_PLLSAI2_DIVR_DIVISOR)
-	case STM32_SRC_PLLSAI2_DIVR:
+#if defined(STM32_SRC_PLLSAI2_POST_R) && STM32_PLLSAI2_R_ENABLED && STM32_PLLSAI2_POST_R_ENABLED
+	case STM32_SRC_PLLSAI2_POST_R:
 		*rate = get_pll_div_frequency(get_pllsai2src_frequency(),
 					      STM32_PLLSAI2_M_DIVISOR,
 					      STM32_PLLSAI2_N_MULTIPLIER,
 					      STM32_PLLSAI2_R_DIVISOR);
-		*rate /= STM32_PLLSAI2_DIVR_DIVISOR;
+		*rate /= STM32_PLLSAI2_POST_R_DIVISOR;
 		break;
-#endif /* STM32_SRC_PLLSAI2_DIVR */
+#endif /* STM32_SRC_PLLSAI2_POST_R */
 #if defined(STM32_SRC_LSE)
 	case STM32_SRC_LSE:
 		*rate = STM32_LSE_FREQ;
@@ -937,8 +937,9 @@ static void set_up_fixed_clock_sources(void)
 		while (LL_RCC_HSE_IsReady() != 1) {
 		/* Wait for HSE ready */
 		}
-		/* Check if we need to enable HSE clock security system or not */
-#if STM32_HSE_CSS
+
+#ifdef STM32_HSE_CSS
+		/* Enable HSE clock security system */
 		z_arm_nmi_set_handler(HAL_RCC_NMI_IRQHandler);
 		LL_RCC_HSE_EnableCSS();
 #endif /* STM32_HSE_CSS */
@@ -992,11 +993,12 @@ static void set_up_fixed_clock_sources(void)
  * handled by this driver. Pick proper register name:
  */
 #define LSE_DRIVING_SHIFT					\
-	COND_CODE_1(IS_ENABLED(CONFIG_SOC_SERIES_STM32C0X),	\
-		(RCC_CSR1_LSEDRV_Pos),				\
-	(COND_CODE_1(IS_ENABLED(CONFIG_SOC_SERIES_STM32L0X),	\
-		(RCC_CSR_LSEDRV_Pos),				\
-		(RCC_BDCR_LSEDRV_Pos))))
+	COND_CASE_1(						\
+		IS_ENABLED(CONFIG_SOC_SERIES_STM32C0X),		\
+			(RCC_CSR1_LSEDRV_Pos),			\
+		IS_ENABLED(CONFIG_SOC_SERIES_STM32L0X),		\
+			(RCC_CSR_LSEDRV_Pos),			\
+		(RCC_BDCR_LSEDRV_Pos))
 
 		/* Configure driving capability */
 		LL_RCC_LSE_SetDriveCapability(STM32_LSE_DRIVING << LSE_DRIVING_SHIFT);
@@ -1208,7 +1210,7 @@ void HAL_RCC_CSSCallback(void)
 {
 	stm32_hse_css_callback();
 }
-#endif
+#endif /* STM32_HSE_CSS */
 
 void __weak config_regulator_voltage(uint32_t hclk_freq) {}
 /**

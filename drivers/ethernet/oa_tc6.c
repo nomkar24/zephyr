@@ -30,7 +30,7 @@ int oa_tc6_reg_read(struct oa_tc6 *tc6, const uint32_t reg, uint32_t *val)
 
 	/*
 	 * Buffers are allocated for protected (larger) case (by 4 bytes).
-	 * When non-protected case - we need to decrase them
+	 * When non-protected case - we need to decrease them
 	 */
 	if (!tc6->protected) {
 		tx_buf.len -= sizeof(rvn);
@@ -86,7 +86,7 @@ int oa_tc6_reg_write(struct oa_tc6 *tc6, const uint32_t reg, uint32_t val)
 
 	/*
 	 * Buffers are allocated for protected (larger) case (by 4 bytes).
-	 * When non-protected case - we need to decrase them
+	 * When non-protected case - we need to decrease them
 	 */
 	if (!tc6->protected) {
 		tx_buf.len -= sizeof(rvn);
@@ -410,6 +410,9 @@ int oa_tc6_read_chunks(struct oa_tc6 *tc6, struct net_pkt *pkt)
 		tc6->concat_buf = NULL;
 	}
 
+	hdr = FIELD_PREP(OA_DATA_HDR_DNC, 1);
+	hdr |= FIELD_PREP(OA_DATA_HDR_P, oa_tc6_get_parity(hdr));
+
 	do {
 		if (!buf_rx) {
 			buf_rx = net_pkt_get_frag(pkt, buf_rx_size, OA_TC6_BUF_ALLOC_TIMEOUT);
@@ -418,9 +421,6 @@ int oa_tc6_read_chunks(struct oa_tc6 *tc6, struct net_pkt *pkt)
 				return -ENOMEM;
 			}
 		}
-
-		hdr = FIELD_PREP(OA_DATA_HDR_DNC, 1);
-		hdr |= FIELD_PREP(OA_DATA_HDR_P, oa_tc6_get_parity(hdr));
 
 		ret = oa_tc6_chunk_spi_transfer(tc6, buf_rx->data + buf_rx_used, NULL, hdr, &ftr);
 		if (ret < 0) {

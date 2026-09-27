@@ -6,8 +6,7 @@
 
 /dts-v1/;
 
-#include <nxp/imxrt/nxp_rt118x_cm33.dtsi>
-#include <nxp/imxrt/nxp_rt1186.dtsi>
+#include <nxp/imxrt/imxrt118x/nxp_rt1186_cm33.dtsi>
 #include "frdm_imxrt1186.dtsi"
 #include <freq.h>
 
@@ -19,9 +18,10 @@
 		zephyr,sram = &hyperram0;
 		zephyr,dtcm = &dtcm;
 		zephyr,itcm = &itcm;
-		zephyr,flash-controller = &w25q128jv;
+		zephyr,flash-controller = &ext_flash_ctrl;
 		zephyr,flash = &w25q128jv;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,code-m7-partition = &slot1_partition;
 		zephyr,console = &lpuart1;
 		zephyr,shell-uart = &lpuart1;
 	};
@@ -64,5 +64,10 @@
 };
 
 &lpadc1 {
+	status = "okay";
+};
+
+&sema1 {
+	domain-id = <8>;
 	status = "okay";
 };

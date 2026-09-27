@@ -10,6 +10,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/input/input_touch.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/minmax.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(stmpe811, CONFIG_INPUT_LOG_LEVEL);
@@ -218,7 +219,7 @@ static int stmpe811_ts_init(const struct device *dev)
 	 * Set the functionalities to be enabled
 	 * Bits [0-3] disable functionalities if set to 1 (reset value: 0x0f)
 	 *
-	 * Apply inverted sum of chosen FCT bits as a mask to the currect register value
+	 * Apply inverted sum of chosen FCT bits as a mask to the current register value
 	 */
 	err = i2c_reg_update_byte_dt(&config->bus, STMPE811_SYS_CTRL2_REG,
 				     STMPE811_SYS_CTRL2_BIT_IO_FCT | STMPE811_SYS_CTRL2_BIT_TS_FCT |
@@ -462,7 +463,7 @@ static int stmpe811_init(const struct device *dev)
 	int err;
 
 	if (!i2c_is_ready_dt(&config->bus)) {
-		LOG_ERR("I2C controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->bus.bus);
 		return -ENODEV;
 	}
 
@@ -486,7 +487,7 @@ static int stmpe811_init(const struct device *dev)
 
 	/* Initialize GPIO interrupt */
 	if (!gpio_is_ready_dt(&config->int_gpio)) {
-		LOG_ERR("Interrupt GPIO controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpio.port);
 		return -ENODEV;
 	}
 

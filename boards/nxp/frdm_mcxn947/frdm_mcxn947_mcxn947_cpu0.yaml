@@ -30,13 +30,17 @@ supported:
   - i3c
   - netif:eth
   - nvs
+  - ptp_clock
   - pwm
   - regulator
   - rtc
   - sdhc
   - spi
+  - tsi
   - usb_device
   - usbd
   - video
   - watchdog
+  - edac
+  - crc
 vendor: nxp

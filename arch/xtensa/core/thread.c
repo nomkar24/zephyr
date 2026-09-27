@@ -120,14 +120,43 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 {
 	thread->switch_handle = init_stack(thread, (int *)stack_ptr, entry,
 					   p1, p2, p3);
+
+#if defined(CONFIG_USERSPACE) && defined(CONFIG_XTENSA_MMU)
+	/*
+	 * Start with no page tables. arch_mem_domain_thread_add() uses a
+	 * non-NULL arch.ptables to detect that the thread is migrating from a
+	 * previous memory domain and reset its stack there. For a brand new
+	 * thread - in particular a dynamically allocated one (k_object_alloc()),
+	 * whose backing memory is not zeroed - this field would otherwise hold
+	 * garbage and the "migration" would walk a bogus page table.
+	 */
+	thread->arch.ptables = NULL;
+#endif
+
 #ifdef CONFIG_XTENSA_LAZY_HIFI_SHARING
 	memset(thread->arch.hifi_regs, 0, sizeof(thread->arch.hifi_regs));
 #endif /* CONFIG_XTENSA_LAZY_HIFI_SHARING */
 
 #ifdef CONFIG_KERNEL_COHERENCE
 	__ASSERT_NO_MSG((((size_t)stack) % XCHAL_DCACHE_LINESIZE) == 0);
-	__ASSERT_NO_MSG((((size_t)stack_ptr) % XCHAL_DCACHE_LINESIZE) == 0);
-	sys_cache_data_flush_and_invd_range(stack, (char *)stack_ptr - (char *)stack);
+
+	/* Here, we need to commit the changes made thus far in the stack,
+	 * so that if the thread starts on another CPU, it will have
+	 * current data. Also, we need to invalidate the cache on this CPU
+	 * or else it would contain stale data when the thread comes back
+	 * to this CPU to run.
+	 *
+	 * Note that the incoming stack_ptr points to an already modified
+	 * stack where the kernel thread setup routine has already put
+	 * data above it. So we need to add back the delta to include
+	 * all modified data.
+	 */
+	size_t flush_sz = (size_t)stack_ptr - (size_t)stack;
+
+	flush_sz += (size_t)thread->stack_info.delta;
+	flush_sz = ROUND_UP(flush_sz, XCHAL_DCACHE_LINESIZE);
+
+	sys_cache_data_flush_and_invd_range(stack, flush_sz);
 #endif
 }
 

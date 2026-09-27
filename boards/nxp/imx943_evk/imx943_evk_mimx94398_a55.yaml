@@ -13,10 +13,18 @@ toolchain:
   - cross-compile
 ram: 10240
 supported:
+  - can
   - counter
   - gpio
   - i2c
   - net
+  - netif:eth
+  - ptp_clock
+  - pwm
+  - spi
   - uart
   - watchdog
+testing:
+  binaries:
+    - flash.bin
 vendor: nxp

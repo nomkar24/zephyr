@@ -9,6 +9,7 @@
 #include <zephyr/net/http/service.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/tls_credentials.h>
 #include <zephyr/sys/util.h>
@@ -160,7 +161,7 @@ static void test_tls(void)
 		const sec_tag_t *sec_tag_list;
 		size_t sec_tag_list_size;
 
-		sec_tag_list_size = sizeof(sec_tag_list);
+		sec_tag_list_size = sizeof(sec_tag_list_verify_none);
 		sec_tag_list = sec_tag_list_verify_none;
 
 		ret = zsock_setsockopt(client_fd, ZSOCK_SOL_TLS, ZSOCK_TLS_SEC_TAG_LIST,

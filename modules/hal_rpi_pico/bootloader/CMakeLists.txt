@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 # Skip compiler checking
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -47,8 +47,6 @@ target_include_directories(boot_stage2 PUBLIC
 if(CONFIG_PICOLIBC)
   target_compile_options(boot_stage2 PRIVATE "--specs=picolibc.specs")
   target_link_options(boot_stage2 PRIVATE "--specs=picolibc.specs")
-else()
-  target_link_options(boot_stage2 PRIVATE "--specs=nosys.specs")
 endif()
 
 target_link_options(boot_stage2 PRIVATE

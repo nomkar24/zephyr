@@ -46,8 +46,9 @@ The bus comprises:
   notifications/messages to the observers. The VDED logic runs inside the publishing action in the same
   thread context, giving the bus an idea of a distributed execution. When a thread publishes to a
   channel, it also propagates the notifications to the observers;
-* Threads (subscribers and message subscribers) and callbacks (listeners) publishing, reading, and
-  receiving notifications from the bus.
+* Threads (subscribers and message subscribers), callbacks (listeners), and async listeners
+  (callbacks deferred to a work queue) publishing, reading, and receiving notifications from the
+  bus.
 
 .. figure:: images/zbus_anatomy.svg
     :alt: ZBus anatomy
@@ -56,10 +57,10 @@ The bus comprises:
     ZBus anatomy.
 
 The bus makes the publish, read, claim, finish, notify, and subscribe actions available over
-channels. Publishing, reading, claiming, and finishing are available in all RTOS thread contexts,
-including ISRs. The publish and read operations are simple and fast; the procedure is channel
+channels. Publishing, reading, claiming, and finishing are available in all RTOS thread contexts
+and ISRs. The publish and read operations are simple and fast; the procedure is channel
 locking followed by a memory copy to and from a shared memory region and then a channel unlocking.
-Another essential aspect of zbus is the observers. There are three types of observers:
+Another essential aspect of zbus is the observers. There are four types of observers:
 
 .. figure:: images/zbus_type_of_observers.svg
     :alt: ZBus observers type
@@ -79,10 +80,11 @@ Another essential aspect of zbus is the observers. There are three types of obse
   dispatcher puts a copy of the message every time an observed channel is published or notified.
 
 Channel observation structures define the relationship between a channel and its observers. For
-every observation, a pair channel/observer. Developers can statically allocate observation using the
-:c:macro:`ZBUS_CHAN_DEFINE` or :c:macro:`ZBUS_CHAN_ADD_OBS`. There are also runtime observers,
-enabling developers to create runtime observations. It is possible to disable an observer entirely
-or observations individually.  The event dispatcher will ignore disabled observers and observations.
+every observation, a channel/observer pair is created. Developers can statically allocate
+observations using the :c:macro:`ZBUS_CHAN_DEFINE` or :c:macro:`ZBUS_CHAN_ADD_OBS`. There are
+also runtime observers, enabling developers to create runtime observations. It is possible to
+disable an observer entirely or observations individually. The event dispatcher will ignore
+disabled observers and observations.
 
 .. figure:: images/zbus_observation_mask.svg
     :alt: ZBus observation mask.
@@ -95,7 +97,7 @@ The above figure illustrates some states, from (a) to (d), for channels from ``C
 allocated (runtime observation). (a) shows that the observer and all observations are enabled. (b)
 shows the observer is disabled, so the event dispatcher will ignore it. (c) shows the observer
 enabled. However, there is one static observation disabled. The event dispatcher will only stop
-sending notifications from channel ``C3``.  In (d), the event dispatcher will stop sending
+sending notifications from channel ``C3``. In (d), the event dispatcher will stop sending
 notifications from channels ``C3`` and ``C5`` to ``Subscriber 1``.
 
 
@@ -106,9 +108,9 @@ also listens to the ``Trigger`` channel. When the sensor data is ready, the sens
 it to the ``Sensor data`` channel. The core thread receives the message as a ``Sensor data`` channel
 message subscriber, processes the sensor data, and stores it in an internal sample buffer. It
 repeats until the sample buffer is full; when it happens, the core thread aggregates the sample
-buffer information, prepares a package, and publishes that to the ``Payload`` channel. The Lora
+buffer information, prepares a package, and publishes that to the ``Payload`` channel. The LoRa
 thread receives that because it is a ``Payload`` channel message subscriber and sends the payload to
-the cloud. When it completes the transmission, the Lora thread publishes to the ``Transmission
+the cloud. When it completes the transmission, the LoRa thread publishes to the ``Transmission
 done`` channel. The VDED executes the ``Blink`` again since it listens to the ``Transmission done``
 channel.
 
@@ -123,7 +125,7 @@ things independently. For example, we want to change the trigger from a timer to
 can do that, and the change does not affect other parts of the system. Likewise, we would like to
 change the communication interface from LoRa to Bluetooth; we only need to change the LoRa thread.
 No other change is required in order to make that work. Thus, the developer would do that for every
-block of the image. Based on that, there is a sign zbus promotes decoupling in the system
+block of the image. Based on that, this indicates that zbus promotes decoupling in the system
 architecture.
 
 Another important aspect of using zbus is the reuse of system modules. If a code portion with
@@ -131,14 +133,17 @@ well-defined behaviors (we call that module) only uses zbus channels and not har
 can easily be reused in other solutions. The new solution must implement the interfaces (set of
 channels) the module needs to work. That indicates zbus could improve the module reuse.
 
-The last important note is the zbus solution reach. We can count on many ways of using zbus to
-enable the developer to be as free as possible to create what they need. For example, messages can
-be dynamic or static allocated; notifications can be synchronous or asynchronous; the developer can
-control the channel in so many different ways claiming the channel, developers can add their
-metadata information to a channel by using the user-data field, the discretionary use of a validator
-enables the systems to be accurate over message format, and so on. Those characteristics increase
-the solutions that can be done with zbus and make it a good fit as an open-source community tool.
+The last important note is the flexibility of zbus. Zbus provides many features that give developers
+freedom to create solutions that fit their specific needs. These features include:
 
+* Messages can be dynamically or statically allocated
+* Notifications can be synchronous or asynchronous
+* Channels can be controlled in various ways by claiming them
+* Custom metadata can be added to channels using the user-data field
+* Optional validators can be used to enforce message format accuracy
+
+These characteristics expand the range of solutions that can be built with zbus and make it
+well-suited as an open-source community tool.
 
 .. _Virtual Distributed Event Dispatcher:
 
@@ -162,7 +167,7 @@ The basic description of the execution is as follows:
 
 To illustrate the VDED execution, consider the example illustrated below. We have four threads in
 ascending priority ``S1``, ``MS2``, ``MS1``, and ``T1`` (the highest priority); two listeners,
-``L1`` and ``L2``; and channel A. Supposing ``L1``, ``L2``, ``MS1``, ``MS2``, and ``S1`` observer
+``L1`` and ``L2``; and channel A. Supposing ``L1``, ``L2``, ``MS1``, ``MS2``, and ``S1`` observe
 channel A.
 
 .. figure:: images/zbus_publishing_process_example_scenario.svg
@@ -283,11 +288,11 @@ Thus, the table below describes the activities (represented by a letter) of the 
 
    * - f
      - The VDED copies the message and sends that to MS1. MS1 preempts T1 and starts working.
-       After that, the T1 regain MCU.
+       After that, the T1 regains the CPU.
 
    * - g
      - The VDED copies the message and sends that to MS2. MS2 preempts T1 and starts working.
-       After that, the T1 regain MCU.
+       After that, the T1 regains the CPU.
 
    * - h
      - The VDED pushes the notification message to the queue of S1.
@@ -298,7 +303,7 @@ Thus, the table below describes the activities (represented by a letter) of the 
    * - j, k, l
      - The S1 leaves the pending state since channel A is not locked. It gets in the CPU again and
        starts executing. As it did receive a notification from channel A, it performs a channel read
-       (as simple as lock, memory copy, unlock), continues its execution, and goes out the CPU.
+       (as simple as lock, memory copy, unlock), continues its execution, and yields the CPU.
 
 
 HLP priority boost
@@ -310,8 +315,8 @@ in the calculation. The VDED will elevate the publisher's priority based on the 
 latency and as few preemptions as possible.
 
 .. note::
-    The priority boost is enabled by default. To deactivate it, you must set the
-    :kconfig:option:`CONFIG_ZBUS_PRIORITY_BOOST` configuration.
+    The priority boost is enabled by default. To deactivate it, disable the
+    :kconfig:option:`CONFIG_ZBUS_PRIORITY_BOOST` configuration option.
 
 .. warning::
     ZBus priority boost does not consider runtime observers on the HOP calculations.
@@ -648,7 +653,7 @@ To simplify integrations with external entities, it is possible to assign a uniq
 to a channel. Users can then retrieve the channel reference by using the identifier with
 :c:func:`zbus_chan_from_id`, rather than needing to obtain the reference at compile time with
 :c:macro:`ZBUS_CHAN_DECLARE`. Channels using this feature are declared with
-:c:func:`ZBUS_CHAN_DEFINE_WITH_ID`.
+:c:macro:`ZBUS_CHAN_DEFINE_WITH_ID`.
 
 .. code-block:: c
 
@@ -668,6 +673,48 @@ to a channel. Users can then retrieve the channel reference by using the identif
         ...
     }
 
+Runtime channel creation
+------------------------
+
+ZBus allows for the creation of channels at runtime when
+:kconfig:option:`CONFIG_ZBUS_RUNTIME_CHANNEL_REGISTRATION` is enabled. This is useful in
+scenarios where the number of channels or their configuration is not known at compile time.
+The following code demonstrates how to create a channel at runtime. Note that the
+:c:struct:`zbus_runtime_channel`, :c:struct:`zbus_channel_data` and message structures passed
+to :c:func:`zbus_runtime_channel_register` must remain valid in memory until
+:c:func:`zbus_runtime_channel_unregister` is called.
+
+.. code-block:: c
+
+    struct runtime_msg {
+        int data;
+    };
+
+    void create_runtime_channel(void)
+    {
+        struct zbus_runtime_channel runtime_chan;
+        struct zbus_channel_data data;
+        struct runtime_msg msg = {0};
+        int ret;
+
+        /* Initialise and register the runtime channel */
+        zbus_runtime_channel_init(&runtime_chan, &data, "chan", 0x12345678, NULL, &msg,
+                                  sizeof(msg), NULL);
+        ret = zbus_runtime_channel_register(&runtime_chan);
+        if (ret < 0) {
+            LOG_ERR("Failed to register runtime channel (%d)", ret);
+            return;
+        }
+
+        /* Use the runtime channel here */
+        struct runtime_msg pub_data = {42};
+
+        zbus_chan_pub(&runtime_chan.channel, &pub_data, K_MSEC(100));
+        ...
+
+        /* Unregister the runtime channel when done */
+        zbus_runtime_channel_unregister(&runtime_chan);
+    }
 
 Iterating over channels and observers
 =====================================
@@ -865,9 +912,9 @@ The following code has the exact behavior of the code in :ref:`publishing to a c
 
     if (!zbus_chan_claim(&acc_chan, K_MSEC(200))) {
             struct acc_msg *acc1 = (struct acc_msg *) zbus_chan_msg(&acc_chan);
-            acc1.x = 1;
-            acc1.y = 1;
-            acc1.z = 1;
+            acc1->x = 1;
+            acc1->y = 1;
+            acc1->z = 1;
             zbus_chan_finish(&acc_chan);
             zbus_chan_notify(&acc_chan, K_SECONDS(1));
     }
@@ -903,12 +950,14 @@ illustrates the runtime registration usage.
 
     ZBUS_LISTENER_DEFINE(my_listener, callback);
     // ...
+
     void thread_entry(void) {
             // ...
             /* Adding the observer to channel chan1 */
             zbus_chan_add_obs(&chan1, &my_listener, K_NO_WAIT);
             /* Removing the observer from channel chan1 */
             zbus_chan_rm_obs(&chan1, &my_listener, K_NO_WAIT);
+    }
 
 
 .. warning::
@@ -916,6 +965,110 @@ illustrates the runtime registration usage.
   The :c:struct:`zbus_observer_node` can only be reused in :c:func:`zbus_chan_add_obs_with_node` after removing
   the channel observer it was first associated with through :c:func:`zbus_chan_rm_obs`.
 
+.. _zbus_proxy_agent:
+
+Proxy Agent Communication (Experimental)
+****************************************
+
+.. warning::
+  Proxy agent communication is experimental and may change without deprecation.
+
+ZBus supports proxy agent forwarding, enabling message passing between different execution
+domains such as CPU cores or separate devices.
+
+.. figure:: images/zbus_proxy_agent.svg
+    :alt: ZBus proxy agent communication
+    :width: 75%
+
+..
+  Image illustrating zbus proxy agent communication between domains.
+
+Concepts
+========
+
+Proxy agent communication introduces several key concepts:
+
+* **Shadow channels**: Read-only channels that mirror channels from other domains
+* **Proxy agents**: Background services that synchronize channel data between domains
+* **Transport backends**: Communication mechanisms used by proxy agents
+
+Proxy agents are set up in code using :c:macro:`ZBUS_PROXY_AGENT_DEFINE`, specifying the transport
+backend and configuration parameters.
+Channels are defined using standard zbus macros (:c:macro:`ZBUS_CHAN_DEFINE` or
+:c:macro:`ZBUS_CHAN_DEFINE_WITH_ID`) and shadow channels use :c:macro:`ZBUS_SHADOW_CHAN_DEFINE`
+to create read-only mirrors linked to specific proxy agents.
+
+Transport Backends
+==================
+
+ZBus proxy agent communication relies on transport backends to forward messages between different
+execution domains.
+
+IPC Backend
+-----------
+
+The IPC backend forwards messages between CPU cores within the same system using
+Inter-Process Communication mechanisms.
+
+See the :zephyr:code-sample:`zbus-proxy-agent-ipc` sample for a complete implementation.
+
+Usage
+=====
+
+1. Enable :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT` and the desired backend option.
+2. Provide the backend device in devicetree.
+3. Instantiate the proxy agent:
+
+.. code-block:: c
+
+    #include <zephyr/zbus/proxy_agent/zbus_proxy_agent.h>
+    #include <zephyr/zbus/proxy_agent/zbus_proxy_agent_ipc.h>
+
+    #define IPC_DEV_NODE DT_NODELABEL(ipc0)
+
+    ZBUS_PROXY_AGENT_DEFINE(proxy_agent,                   /* Proxy agent name */
+                            ZBUS_PROXY_AGENT_BACKEND_IPC,  /* Proxy agent type */
+                            IPC_DEV_NODE                   /* Backend node */
+    );
+
+Where:
+
+- "proxy_agent": Name of the proxy agent instance
+- "ZBUS_PROXY_AGENT_BACKEND_IPC": Transport backend type (IPC in this case)
+- "IPC_DEV_NODE": Device tree node for the backend device
+
+4. Forward local channels through the agent:
+
+.. code-block:: c
+
+    ZBUS_CHAN_DEFINE(my_channel, struct my_msg, NULL, NULL,
+                     ZBUS_OBSERVERS_EMPTY, ZBUS_MSG_INIT(0));
+    ZBUS_PROXY_ADD_CHAN(proxy_agent, my_channel);
+
+    zbus_chan_pub(&my_channel, &msg, K_MSEC(100));
+
+Any message published to "my_channel" will be forwarded by "proxy_agent" to remote domains.
+
+5. Mirror remote channels with shadows:
+
+.. code-block:: c
+
+    ZBUS_SHADOW_CHAN_DEFINE(my_channel_shadow, struct my_msg,
+                            proxy_agent, NULL, ZBUS_OBSERVERS_EMPTY,
+                            ZBUS_MSG_INIT(0));
+
+Where the shadow channel can be used like any regular channel, but is read-only. For example, adding a listener:
+
+.. code-block:: c
+
+    void my_listener_cb(const struct zbus_channel *chan)
+    {
+        const struct my_msg *data = zbus_chan_const_msg(chan);
+        printk("Received: %d\n", data->data);
+    }
+
+    ZBUS_LISTENER_DEFINE(my_listener, my_listener_cb);
+    ZBUS_CHAN_ADD_OBS(my_channel_shadow, my_listener, 0);
 
 Samples
 *******
@@ -939,9 +1092,11 @@ available:
   inversion scenario;
 * :zephyr:code-sample:`zbus-runtime-obs-registration` illustrates a way of using the runtime
   observer registration feature;
-* :zephyr:code-sample:`zbus-confirmed-channel` implements a way of implement confirmed channel only
-  with subscribers;
+* :zephyr:code-sample:`zbus-confirmed-channel` implements a way to implement a confirmed channel
+  using only subscribers;
 * :zephyr:code-sample:`zbus-benchmark` implements a benchmark with different combinations of inputs.
+* :zephyr:code-sample:`zbus-proxy-agent-ipc` demonstrates multi-core communication using IPC
+  proxy agents;
 
 Suggested Uses
 **************
@@ -952,6 +1107,11 @@ scenarios that can tolerate message losses and duplications; when they cannot, u
 subscribers (if you need a thread) or listeners (if you need to be lean and fast). In addition to
 the listener, another asynchronous message processing mechanism (like :ref:`message queues
 <message_queues_v2>`) may be necessary to retain the pending message until it gets processed.
+
+For proxy agent scenarios, use zbus to enable communication across execution boundaries:
+
+* **Multi-core systems**: Use IPC backend proxy agents to coordinate between application and
+  network processors, or distribute workloads across multiple CPU cores.
 
 .. note::
    ZBus can be used to transfer streams from the producer to the consumer. However, this can
@@ -983,7 +1143,8 @@ Related configuration options:
 * :kconfig:option:`CONFIG_ZBUS_MSG_SUBSCRIBER_NET_BUF_POOL_SIZE` the available number of message
   buffers to be used simultaneously;
 * :kconfig:option:`CONFIG_ZBUS_MSG_SUBSCRIBER_NET_BUF_POOL_ISOLATION` enables the developer to isolate
-  a pool for the message subscriber for a set of channels;
+  a pool for the message subscriber for a set of channels; a channel only switches to a dedicated pool once
+  :c:func:`zbus_chan_set_msg_sub_pool` has been called for it;
 * :kconfig:option:`CONFIG_ZBUS_MSG_SUBSCRIBER_NET_BUF_STATIC_DATA_SIZE` the biggest message of zbus
   channels to be transported into a message buffer;
 * :kconfig:option:`CONFIG_HEAP_MEM_POOL_ADD_SIZE_ZBUS` the reserved heap size for ZBus in a whole
@@ -995,9 +1156,30 @@ Related configuration options:
 * :kconfig:option:`CONFIG_ZBUS_RUNTIME_OBSERVERS_NODE_ALLOC_STATIC` allocate the runtime observers
   statically using a memory slab;
 * :kconfig:option:`CONFIG_ZBUS_RUNTIME_OBSERVERS_NODE_POOL_SIZE` the amount of enabled runtime
-  observers to statically allocate.
+  observers to statically allocate;
 * :kconfig:option:`CONFIG_ZBUS_RUNTIME_OBSERVERS_NODE_ALLOC_NONE` use user-provided runtime
   observers nodes;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT` enable proxy agent communication support.
+
+Proxy Agent Configuration Options
+=================================
+
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_LOG_LEVEL` log level for proxy agent communication;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_IPC` enable IPC backend for proxy agent communication;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_IPC_LOG_LEVEL` log level for IPC backend proxy agent
+  communication;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_MAX_MESSAGE_SIZE` maximum message size for proxy agent
+  channels;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_MAX_CHANNEL_NAME_SIZE` maximum size of channel names in
+  proxy agent communication;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_INIT_PRIORITY` initialization priority for proxy agent
+  setup.
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_WORK_QUEUE_STACK_SIZE` stack size for the proxy agent
+  receive work queue thread;
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_WORK_QUEUE_PRIORITY` priority for the proxy agent receive
+  work queue thread.
+* :kconfig:option:`CONFIG_ZBUS_PROXY_AGENT_RX_QUEUE_DEPTH` depth of the proxy agent receive queue
+  for incoming messages from remote domains.
 
 API Reference
 *************

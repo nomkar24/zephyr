@@ -5,7 +5,7 @@
  */
 /dts-v1/;
 
-#include <espressif/esp32s3/esp32s3_wroom_n8.dtsi>
+#include <espressif/esp32s3/esp32s3.dtsi>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/input/esp32-touch-sensor-input.h>
 #include <espressif/partitions_0x0_amp.dtsi>
@@ -42,6 +42,11 @@
 	};
 };
 
+&flash0 {
+	reg = <0x0 DT_SIZE_M(8)>;
+	ranges = <0x0 0x0 DT_SIZE_M(8)>;
+};
+
 &usb_serial {
 	status = "disabled";
 };
@@ -50,8 +55,7 @@
 	status = "okay";
 	current-speed = <115200>;
 	pinctrl-0 = <&uart0_default>;
-	pinctrl-1 = <&uart0_sleep>;
-	pinctrl-names = "default", "sleep";
+	pinctrl-names = "default";
 };
 
 &gpio0 {
@@ -150,5 +154,9 @@
 };
 
 zephyr_udc0: &usb_otg {
+	status = "okay";
+};
+
+zephyr_uhc0: &usb_otg {
 	status = "okay";
 };

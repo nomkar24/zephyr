@@ -386,7 +386,7 @@ static bool schedule_send(struct bt_mesh_ext_adv *ext_adv)
 		 * current advertising is finished, which is done through the `adv_sent` callback.
 		 *
 		 * The proxy advertisement in turns doesn't timeout or stop quickly and has less
-		 * priority than regular mesh messages, thus needs to be stopped immeditaly.
+		 * priority than regular mesh messages, thus needs to be stopped immediately.
 		 */
 		if (!atomic_test_bit(ext_adv->flags, ADV_FLAG_PROXY)) {
 			return false;
@@ -502,7 +502,7 @@ void bt_mesh_adv_init(void)
 		k_work_queue_init(&bt_mesh_workq);
 		k_work_queue_start(&bt_mesh_workq, thread_stack, MESH_WORKQ_STACK_SIZE,
 				   K_PRIO_COOP(MESH_WORKQ_PRIORITY), NULL);
-		k_thread_name_set(&bt_mesh_workq.thread, "BT MESH WQ");
+		k_thread_name_set(bt_mesh_workq.thread_id, "BT MESH WQ");
 	}
 }
 

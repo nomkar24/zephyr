@@ -11,19 +11,18 @@
 #include <errno.h>
 
 #include <zephyr/sys/atomic.h>
-#include <zephyr/sys/check.h>
 #include <zephyr/sys/byteorder.h>
 
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 
-#include "common/bt_str.h"
+#include <common/bt_str.h>
 
-#include "host/addr_internal.h"
-#include "host/hci_core.h"
+#include <host/addr_internal.h>
+#include <host/hci_core.h>
 #include "br.h"
-#include "host/conn_internal.h"
+#include <host/conn_internal.h>
 #include "sco_internal.h"
 
 #define LOG_LEVEL CONFIG_BT_CONN_LOG_LEVEL
@@ -39,7 +38,7 @@ static sys_slist_t sco_hci_cbs = SYS_SLIST_STATIC_INIT(&sco_hci_cbs);
 
 int bt_sco_server_register(struct bt_sco_server *server)
 {
-	CHECKIF(!server) {
+	if (!server) {
 		LOG_DBG("Invalid parameter: server %p", server);
 		return -EINVAL;
 	}
@@ -65,7 +64,7 @@ int bt_sco_server_register(struct bt_sco_server *server)
 
 int bt_sco_server_unregister(struct bt_sco_server *server)
 {
-	CHECKIF(!server) {
+	if (!server) {
 		LOG_DBG("Invalid parameter: server %p", server);
 		return -EINVAL;
 	}
@@ -294,7 +293,7 @@ static int sco_accept(struct bt_conn *acl, struct bt_conn *sco)
 	struct bt_sco_chan *chan;
 	int err;
 
-	CHECKIF(!sco || sco->type != BT_CONN_TYPE_SCO) {
+	if (!sco || sco->type != BT_CONN_TYPE_SCO) {
 		LOG_ERR("Invalid parameters: sco %p sco->type %u", sco, sco ? sco->type : 0);
 		return -EINVAL;
 	}
@@ -383,7 +382,21 @@ uint8_t bt_esco_conn_req(struct bt_hci_evt_conn_request *evt)
 	sco_conn->sco.link_type = evt->link_type;
 
 	if (accept_sco_conn(&evt->bdaddr, sco_conn)) {
+		struct bt_sco_chan *chan = sco_conn->sco.chan;
+
 		LOG_ERR("Error accepting connection from %s", bt_addr_str(&evt->bdaddr));
+
+		/* If the server accepted the connection request, a channel was
+		 * attached in sco_accept(). Detach it before releasing the
+		 * connection object so that the channel does not keep a
+		 * dangling reference to it. The disconnected callback is not
+		 * called since the connection was never established.
+		 */
+		if (chan != NULL) {
+			bt_sco_chan_set_state(chan, BT_SCO_STATE_DISCONNECTED);
+			chan->sco = NULL;
+		}
+
 		bt_sco_cleanup(sco_conn);
 		return BT_HCI_ERR_UNSPECIFIED;
 	}
@@ -399,10 +412,7 @@ void bt_sco_cleanup_acl(struct bt_conn *sco)
 {
 	LOG_DBG("%p", sco);
 
-	if (sco->sco.acl) {
-		bt_conn_unref(sco->sco.acl);
-		sco->sco.acl = NULL;
-	}
+	bt_conn_drop(&sco->sco.acl);
 }
 
 static int sco_setup_sync_conn(struct bt_conn *sco_conn)
@@ -485,7 +495,7 @@ struct bt_conn *bt_conn_create_sco(const bt_addr_t *peer, struct bt_sco_chan *ch
 
 int bt_sco_conn_cb_register(struct bt_sco_conn_cb *cb)
 {
-	CHECKIF(cb == NULL) {
+	if (cb == NULL) {
 		return -EINVAL;
 	}
 
@@ -500,7 +510,7 @@ int bt_sco_conn_cb_register(struct bt_sco_conn_cb *cb)
 
 int bt_sco_conn_cb_unregister(struct bt_sco_conn_cb *cb)
 {
-	CHECKIF(cb == NULL) {
+	if (cb == NULL) {
 		return -EINVAL;
 	}
 
@@ -513,7 +523,7 @@ int bt_sco_conn_cb_unregister(struct bt_sco_conn_cb *cb)
 
 int bt_sco_hci_cb_register(struct bt_sco_hci_cb *cb)
 {
-	CHECKIF(cb == NULL) {
+	if (cb == NULL) {
 		return -EINVAL;
 	}
 
@@ -528,7 +538,7 @@ int bt_sco_hci_cb_register(struct bt_sco_hci_cb *cb)
 
 int bt_sco_hci_cb_unregister(struct bt_sco_hci_cb *cb)
 {
-	CHECKIF(cb == NULL) {
+	if (cb == NULL) {
 		return -EINVAL;
 	}
 

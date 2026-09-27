@@ -8,16 +8,14 @@
 
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/video-controls.h>
 #include <zephyr/drivers/video.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/video/video.h>
 
 #include "video_common.h"
-#include "video_ctrls.h"
-#include "video_device.h"
 
 LOG_MODULE_REGISTER(hm01b0, CONFIG_VIDEO_LOG_LEVEL);
 #define MAX_FRAME_RATE 10
@@ -86,9 +84,9 @@ enum hm01b0_resolution {
 	RESOLUTION_162x122,
 	RESOLUTION_324x244,
 	RESOLUTION_324x324,
-	RESOLUTION_162x122_Y4,
-	RESOLUTION_324x244_Y4,
-	RESOLUTION_324x324_Y4,
+	RESOLUTION_162x122_Y8P16,
+	RESOLUTION_324x244_Y8P16,
+	RESOLUTION_324x324_Y8P16,
 	RESOLUTION_324x244_BAYER,
 	RESOLUTION_324x324_BAYER,
 };
@@ -146,9 +144,9 @@ struct video_reg *hm01b0_init_regs[] = {
 	[RESOLUTION_162x122] = hm01b0_160x120_regs,
 	[RESOLUTION_324x244] = hm01b0_320x240_regs,
 	[RESOLUTION_324x324] = hm01b0_320x320_regs,
-	[RESOLUTION_162x122_Y4] = hm01b0_160x120_regs,
-	[RESOLUTION_324x244_Y4] = hm01b0_320x240_regs,
-	[RESOLUTION_324x324_Y4] = hm01b0_320x320_regs,
+	[RESOLUTION_162x122_Y8P16] = hm01b0_160x120_regs,
+	[RESOLUTION_324x244_Y8P16] = hm01b0_320x240_regs,
+	[RESOLUTION_324x324_Y8P16] = hm01b0_320x320_regs,
 	[RESOLUTION_324x244_BAYER] = hm01b0_320x240_regs,
 	[RESOLUTION_324x324_BAYER] = hm01b0_320x320_regs,
 };
@@ -255,9 +253,9 @@ static const struct video_format_cap hm01b0_fmts[] = {
 	[RESOLUTION_162x122] = HM01B0_VIDEO_FORMAT_CAP(162, 122, VIDEO_PIX_FMT_GREY),
 	[RESOLUTION_324x244] = HM01B0_VIDEO_FORMAT_CAP(324, 244, VIDEO_PIX_FMT_GREY),
 	[RESOLUTION_324x324] = HM01B0_VIDEO_FORMAT_CAP(324, 324, VIDEO_PIX_FMT_GREY),
-	[RESOLUTION_162x122_Y4] = HM01B0_VIDEO_FORMAT_CAP(162, 122, VIDEO_PIX_FMT_Y4),
-	[RESOLUTION_324x244_Y4] = HM01B0_VIDEO_FORMAT_CAP(324, 244, VIDEO_PIX_FMT_Y4),
-	[RESOLUTION_324x324_Y4] = HM01B0_VIDEO_FORMAT_CAP(324, 324, VIDEO_PIX_FMT_Y4),
+	[RESOLUTION_162x122_Y8P16] = HM01B0_VIDEO_FORMAT_CAP(162, 122, VIDEO_PIX_FMT_Y8P16),
+	[RESOLUTION_324x244_Y8P16] = HM01B0_VIDEO_FORMAT_CAP(324, 244, VIDEO_PIX_FMT_Y8P16),
+	[RESOLUTION_324x324_Y8P16] = HM01B0_VIDEO_FORMAT_CAP(324, 324, VIDEO_PIX_FMT_Y8P16),
 	[RESOLUTION_324x244_BAYER] = HM01B0_VIDEO_FORMAT_CAP(324, 244, VIDEO_PIX_FMT_SBGGR8),
 	[RESOLUTION_324x324_BAYER] = HM01B0_VIDEO_FORMAT_CAP(324, 324, VIDEO_PIX_FMT_SBGGR8),
 	{0},
@@ -395,7 +393,10 @@ static int hm01b0_set_frmival(const struct device *dev, struct video_frmival *fr
 	fie.format = &drv_data->fmt;
 	fie.discrete = *frmival;
 	fie.type = VIDEO_FRMIVAL_TYPE_DISCRETE;
-	video_closest_frmival(dev, &fie);
+	ret = video_closest_frmival(dev, &fie);
+	if (ret < 0) {
+		return ret;
+	}
 
 	/*
 	 * Note: in highres mode max FPS is 45 else 60
@@ -471,7 +472,7 @@ int hm01b0_enum_frmival(const struct device *dev, struct video_frmival_enum *fie
 		break;
 	case HM01B0_45_OR_60_FPS:
 		/* if we are doing 4 bit mode don't allow highest speed */
-		if (fie->format && (fie->format->pixelformat == VIDEO_PIX_FMT_Y4)) {
+		if (fie->format && (fie->format->pixelformat == VIDEO_PIX_FMT_Y8P16)) {
 			return -EINVAL;
 		}
 		fie->discrete.numerator = 1;

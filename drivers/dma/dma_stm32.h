@@ -60,7 +60,8 @@ typedef void (*dma_stm32_clear_flag_func)(DMA_TypeDef *DMAx);
 	!defined(CONFIG_SOC_SERIES_STM32H7X) && \
 	!defined(CONFIG_SOC_SERIES_STM32L4X) && \
 	!defined(CONFIG_SOC_SERIES_STM32MP13X) && \
-	!defined(CONFIG_SOC_SERIES_STM32U0X)
+	!defined(CONFIG_SOC_SERIES_STM32U0X) && \
+	!defined(CONFIG_SOC_SERIES_STM32WLX)
 typedef uint32_t (*dma_stm32_check_flag_func)(DMA_TypeDef *DMAx);
 #else
 typedef uint32_t (*dma_stm32_check_flag_func)(const DMA_TypeDef *DMAx);
@@ -104,20 +105,5 @@ uint32_t stm32_dma_get_fifo_threshold(uint16_t fifo_mode_control);
 uint32_t stm32_dma_get_mburst(struct dma_config *config, bool source_periph);
 uint32_t stm32_dma_get_pburst(struct dma_config *config, bool source_periph);
 #endif
-
-#ifdef CONFIG_DMAMUX_STM32
-/* dma_stm32_ api functions are exported to the dmamux_stm32 */
-#define DMA_STM32_EXPORT_API
-int dma_stm32_configure(const struct device *dev, uint32_t id,
-				struct dma_config *config);
-int dma_stm32_reload(const struct device *dev, uint32_t id,
-			uint32_t src, uint32_t dst, size_t size);
-int dma_stm32_start(const struct device *dev, uint32_t id);
-int dma_stm32_stop(const struct device *dev, uint32_t id);
-int dma_stm32_get_status(const struct device *dev, uint32_t id,
-				struct dma_status *stat);
-#else
-#define DMA_STM32_EXPORT_API static
-#endif /* CONFIG_DMAMUX_STM32 */
 
 #endif /* DMA_STM32_H_*/

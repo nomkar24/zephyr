@@ -13,6 +13,7 @@
 LOG_MODULE_REGISTER(net_mqtt, CONFIG_MQTT_LOG_LEVEL);
 
 #include <zephyr/net/mqtt.h>
+#include <zephyr/net/net_log.h>
 
 #include "mqtt_transport.h"
 #include "mqtt_internal.h"
@@ -249,7 +250,7 @@ int mqtt_client_set_proxy(struct mqtt_client *client,
 		}
 
 		client->transport.proxy.addrlen = addrlen;
-		memcpy(&client->transport.proxy.addr, proxy_addr, addrlen);
+		memcpy(&client->transport.proxy.addr_storage, proxy_addr, addrlen);
 
 		return 0;
 	}

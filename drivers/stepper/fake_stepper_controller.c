@@ -5,8 +5,9 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/stepper/stepper.h>
-#include <zephyr/drivers/stepper/stepper_fake.h>
 #include <zephyr/fff.h>
+
+#include "stepper_fake.h"
 
 #ifdef CONFIG_ZTEST
 #include <zephyr/ztest.h>
@@ -39,6 +40,9 @@ DEFINE_FAKE_VALUE_FUNC(int, fake_stepper_ctrl_move_by, const struct device *, in
 
 DEFINE_FAKE_VALUE_FUNC(int, fake_stepper_ctrl_set_microstep_interval, const struct device *,
 		       uint64_t);
+
+DEFINE_FAKE_VALUE_FUNC(int, fake_stepper_ctrl_configure_ramp, const struct device *,
+		       const struct stepper_ctrl_ramp *);
 
 DEFINE_FAKE_VALUE_FUNC(int, fake_stepper_ctrl_set_reference_position, const struct device *,
 		       int32_t);
@@ -77,6 +81,14 @@ static int fake_stepper_driver_get_micro_step_res_delegate(const struct device *
 	return 0;
 }
 
+static int fake_stepper_ctrl_is_moving_delegate(const struct device *dev, bool *is_moving)
+{
+	ARG_UNUSED(dev);
+	*is_moving = false;
+
+	return 0;
+}
+
 static int fake_stepper_ctrl_set_reference_position_delegate(const struct device *dev,
 							      const int32_t pos)
 {
@@ -110,6 +122,7 @@ static void fake_stepper_reset_rule_before(const struct ztest_unit_test *test, v
 	RESET_FAKE(fake_stepper_ctrl_move_by);
 	RESET_FAKE(fake_stepper_ctrl_is_moving);
 	RESET_FAKE(fake_stepper_ctrl_set_microstep_interval);
+	RESET_FAKE(fake_stepper_ctrl_configure_ramp);
 	RESET_FAKE(fake_stepper_ctrl_set_reference_position);
 	RESET_FAKE(fake_stepper_ctrl_get_actual_position);
 	RESET_FAKE(fake_stepper_ctrl_move_to);
@@ -121,6 +134,8 @@ static void fake_stepper_reset_rule_before(const struct ztest_unit_test *test, v
 		fake_stepper_driver_set_micro_step_res_delegate;
 	fake_stepper_driver_get_micro_step_res_fake.custom_fake =
 		fake_stepper_driver_get_micro_step_res_delegate;
+
+	fake_stepper_ctrl_is_moving_fake.custom_fake = fake_stepper_ctrl_is_moving_delegate;
 	fake_stepper_ctrl_set_reference_position_fake.custom_fake =
 		fake_stepper_ctrl_set_reference_position_delegate;
 	fake_stepper_ctrl_get_actual_position_fake.custom_fake =
@@ -142,6 +157,7 @@ static int fake_stepper_driver_init(const struct device *dev)
 
 static int fake_stepper_init(const struct device *dev)
 {
+	fake_stepper_ctrl_is_moving_fake.custom_fake = fake_stepper_ctrl_is_moving_delegate;
 	fake_stepper_ctrl_set_reference_position_fake.custom_fake =
 		fake_stepper_ctrl_set_reference_position_delegate;
 	fake_stepper_ctrl_get_actual_position_fake.custom_fake =
@@ -162,6 +178,7 @@ static DEVICE_API(stepper_ctrl, fake_stepper_ctrl_api) = {
 	.move_by = fake_stepper_ctrl_move_by,
 	.is_moving = fake_stepper_ctrl_is_moving,
 	.set_microstep_interval = fake_stepper_ctrl_set_microstep_interval,
+	.configure_ramp = fake_stepper_ctrl_configure_ramp,
 	.set_reference_position = fake_stepper_ctrl_set_reference_position,
 	.get_actual_position = fake_stepper_ctrl_get_actual_position,
 	.move_to = fake_stepper_ctrl_move_to,

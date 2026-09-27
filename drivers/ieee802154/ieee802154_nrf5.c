@@ -256,7 +256,6 @@ static void nrf5_get_capabilities_at_boot(void)
 		IEEE802154_HW_ENERGY_SCAN |
 		((caps & NRF_802154_CAPABILITY_DELAYED_TX) ? IEEE802154_HW_TXTIME : 0UL) |
 		((caps & NRF_802154_CAPABILITY_DELAYED_RX) ? IEEE802154_HW_RXTIME : 0UL) |
-		IEEE802154_HW_SLEEP_TO_TX |
 		IEEE802154_RX_ON_WHEN_IDLE |
 		((caps & NRF_802154_CAPABILITY_SECURITY) ? IEEE802154_HW_TX_SEC : 0UL)
 #if defined(CONFIG_IEEE802154_NRF5_MULTIPLE_CCA)
@@ -627,7 +626,7 @@ static int nrf5_tx(const struct device *dev,
 		break;
 #endif /* CONFIG_NET_PKT_TXTIME */
 	default:
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 

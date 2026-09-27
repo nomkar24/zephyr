@@ -17,8 +17,8 @@
 #include <zephyr/linker/sections.h>
 #include <zephyr/logging/log.h>
 #include <soc.h>
-#include "fsl_power.h"
-#include "fsl_clock.h"
+#include <fsl_power.h>
+#include <fsl_clock.h>
 #include <fsl_cache.h>
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
@@ -28,16 +28,14 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 #endif
 
 #if CONFIG_USB_DC_NXP_LPCIP3511 || CONFIG_UDC_NXP_IP3511
-#include "usb_phy.h"
-#include "usb.h"
+#include <usb_phy.h>
+#include <usb.h>
 #endif
 
 /* Board System oscillator settling time in us */
 #define BOARD_SYSOSC_SETTLING_US 100U
 /* Board xtal frequency in Hz */
 #define BOARD_XTAL_SYS_CLK_HZ    24000000U
-/* Core clock frequency: 198000000Hz */
-#define CLOCK_INIT_CORE_CLOCK    198000000U
 
 #define CTIMER_CLOCK_SOURCE(node_id)                                                               \
 	TO_CTIMER_CLOCK_SOURCE(DT_CLOCKS_CELL(node_id, name), DT_PROP(node_id, clk_source))
@@ -393,6 +391,12 @@ void __weak rt5xx_clock_init(void)
 	CLOCK_EnableClock(kCLOCK_Smartdma);
 #endif
 
+#if CONFIG_DSP_BACKEND_POWERQUAD
+	/* Power up PowerQuad SRAM */
+	POWER_DisablePD(kPDRUNCFG_PPD_PQ_SRAM);
+	POWER_ApplyPD();
+#endif
+
 	DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
 
 	/* Set up dividers. */
@@ -451,7 +455,7 @@ void __weak rt5xx_clock_init(void)
 #endif
 
 	/* Set SystemCoreClock variable. */
-	SystemCoreClock = CLOCK_INIT_CORE_CLOCK;
+	SystemCoreClock = DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency);
 
 	/* Set main clock to FRO as deep sleep clock by default. */
 	POWER_SetDeepSleepClock(kDeepSleepClk_Fro);

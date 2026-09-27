@@ -6,7 +6,7 @@
 
 /dts-v1/;
 #include <st/mp2/stm32mp257_m33.dtsi>
-#include <st/mp2/stm32mp257faix-pinctrl.dtsi>
+#include <st/mp2/stm32mp257fakx-pinctrl.dtsi>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
@@ -58,22 +58,6 @@
 	clock-frequency = <DT_FREQ_M(400)>;
 };
 
-&gpioc {
-	status = "okay";
-};
-
-&gpiof {
-	status = "okay";
-};
-
-&gpiog {
-	status = "okay";
-};
-
-&gpioh {
-	status = "okay";
-};
-
 &mailbox {
 	status = "okay";
 };
@@ -96,6 +80,8 @@
 	/* Pin conflict with i3c4. Enable only with i3c4 disabled */
 	pinctrl-0 = <&i2c8_scl_pz4 &i2c8_sda_pz3>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpioz 4 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpioz 3 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
 

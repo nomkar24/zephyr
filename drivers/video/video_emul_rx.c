@@ -8,14 +8,15 @@
 
 #include <string.h>
 
-#include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/sys/util.h>
-#include <zephyr/drivers/video.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/video.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/video/video.h>
 
-#include "video_device.h"
+#include "video_common.h"
 
 LOG_MODULE_REGISTER(video_emul_rx, CONFIG_VIDEO_LOG_LEVEL);
 
@@ -141,7 +142,7 @@ static int emul_rx_enqueue(const struct device *dev, struct video_buffer *vbuf)
 		return -ENOMEM;
 	}
 
-	/* The buffer has not been filled yet: flag as emtpy */
+	/* The buffer has not been filled yet: flag as empty */
 	vbuf->bytesused = 0;
 
 	/* Submit the buffer for processing in the worker, where everything happens */

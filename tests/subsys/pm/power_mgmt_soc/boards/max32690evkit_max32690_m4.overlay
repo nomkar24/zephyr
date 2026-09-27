@@ -6,7 +6,7 @@
 
 / {
 	chosen {
-		zephyr,cortex-m-idle-timer = &counter0;
+		zephyr,system-timer-companion = &counter0;
 	};
 };
 
@@ -21,5 +21,6 @@
 
 	counter0: counter {
 		status = "okay";
+		wakeup-source;
 	};
 };

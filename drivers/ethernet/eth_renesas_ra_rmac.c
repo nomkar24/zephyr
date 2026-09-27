@@ -57,26 +57,17 @@ struct eswm_renesas_ra_config {
 	void (*en_irq)(void);
 };
 
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 struct eth_renesas_ra_buf_header {
 	uint8_t *buf;
 };
-#endif
 
 struct eth_renesas_ra_data {
 	struct net_if *iface;
 	uint8_t mac_addr[NET_ETH_ADDR_LEN];
-
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 	/* DMA buffer header */
 	struct eth_renesas_ra_buf_header *tx_buf_header;
 	uint8_t tx_buf_idx;
 	uint8_t tx_buf_num;
-#else
-	/* staging buffer */
-	uint8_t *rx_frame;
-	uint8_t *tx_frame;
-#endif
 	struct k_thread rx_thread;
 
 	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_RENESAS_RA_RX_THREAD_STACK_SIZE);
@@ -90,6 +81,7 @@ struct eth_renesas_ra_data {
 	rmac_instance_ctrl_t fsp_ctrl;
 	ether_cfg_t fsp_cfg;
 	ether_callback_args_t fsp_cb;
+	bool phy_link_up;
 };
 
 struct eth_renesas_ra_config {
@@ -114,19 +106,21 @@ static void phy_link_cb(const struct device *phy_dev, struct phy_link_state *sta
 	fsp_err_t fsp_err = FSP_SUCCESS;
 
 	if (!state->is_up) {
-		/* phy state change from up to down */
-		r_rmac_disable_reception(&data->fsp_ctrl);
+		if (data->phy_link_up == true) {
+			/* phy state change from up to down */
+			r_rmac_disable_reception(&data->fsp_ctrl);
+			data->phy_link_up = false;
 
-		data->fsp_ctrl.link_establish_status = ETHER_LINK_ESTABLISH_STATUS_DOWN;
+			data->fsp_ctrl.link_establish_status = ETHER_LINK_ESTABLISH_STATUS_DOWN;
 
-		LOG_DBG("Link down");
-		net_eth_carrier_off(data->iface);
+			net_eth_carrier_off(data->iface);
+		}
 		return;
 	}
 
 	data->fsp_ctrl.link_establish_status = ETHER_LINK_ESTABLISH_STATUS_UP;
 
-	/* Chage ETHA to config mode */
+	/* Change ETHA to config mode */
 	r_rmac_phy_set_operation_mode(data->fsp_cfg.channel, RENESAS_RA_ETHA_DISABLE_MODE);
 	r_rmac_phy_set_operation_mode(data->fsp_cfg.channel, RENESAS_RA_ETHA_CONFIG_MODE);
 
@@ -151,7 +145,7 @@ static void phy_link_cb(const struct device *phy_dev, struct phy_link_state *sta
 		break;
 	}
 
-	/* Chage ETHA to operate mode */
+	/* Change ETHA to operate mode */
 	r_rmac_phy_set_operation_mode(data->fsp_cfg.channel, RENESAS_RA_ETHA_DISABLE_MODE);
 	r_rmac_phy_set_operation_mode(data->fsp_cfg.channel, RENESAS_RA_ETHA_OPERATION_MODE);
 
@@ -165,9 +159,8 @@ static void phy_link_cb(const struct device *phy_dev, struct phy_link_state *sta
 		return;
 	}
 
-	LOG_DBG("Link up");
-
 	net_eth_carrier_on(data->iface);
+	data->phy_link_up = true;
 }
 
 static void eth_rmac_cb(ether_callback_args_t *args)
@@ -178,13 +171,11 @@ static void eth_rmac_cb(ether_callback_args_t *args)
 	switch (args->event) {
 #if defined(CONFIG_ETH_RENESAS_RA_USE_HW_WRITEBACK)
 	case ETHER_EVENT_TX_COMPLETE:
-		/* tx frame writen */
+		/* tx frame written */
 		k_sem_give(&data->tx_sem);
 		break;
 #endif
 	case ETHER_EVENT_RX_MESSAGE_LOST:
-		/* rx queue is full to append new frame */
-		__fallthrough;
 	case ETHER_EVENT_RX_COMPLETE:
 		/* new rx frame is ready to read */
 		k_sem_give(&data->rx_sem);
@@ -234,10 +225,9 @@ static void phy_type_setting(const struct device *dev)
 	}
 }
 
-static enum ethernet_hw_caps eth_renesas_ra_get_capabilities(const struct device *dev)
+static enum ethernet_hw_caps eth_renesas_ra_get_capabilities(const struct device *dev __unused,
+							     struct net_if *iface __unused)
 {
-	ARG_UNUSED(dev);
-
 	return ETHERNET_LINK_10BASE | ETHERNET_LINK_100BASE | ETHERNET_LINK_1000BASE;
 }
 
@@ -249,17 +239,16 @@ static bool renesas_ra_eth_rx(const struct device *dev)
 	fsp_err_t fsp_err = FSP_SUCCESS;
 	int ret = 0;
 	uint8_t *rx_buf;
+	bool rx_buf_held = false;
 
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 	fsp_err = R_RMAC_Read(&data->fsp_ctrl, &rx_buf, (uint32_t *)&len);
-#else
-	rx_buf = data->rx_frame;
-	fsp_err = R_RMAC_Read(&data->fsp_ctrl, rx_buf, (uint32_t *)&len);
-#endif
+
+	if (fsp_err == FSP_SUCCESS) {
+		rx_buf_held = true;
+	}
 
 	if (fsp_err == FSP_ERR_ETHER_ERROR_NO_DATA) {
 		/* Nothing to receive, all desc in queue was read */
-		k_sem_reset(&data->rx_sem);
 		return false;
 	} else if (fsp_err != FSP_SUCCESS) {
 		LOG_DBG("Failed to read from FIFO");
@@ -270,23 +259,27 @@ static bool renesas_ra_eth_rx(const struct device *dev)
 	pkt = net_pkt_rx_alloc_with_buffer(data->iface, (size_t)len, NET_AF_UNSPEC, 0,
 					   NET_BUF_TIMEOUT);
 	if (pkt == NULL) {
+		if (rx_buf_held) {
+			R_RMAC_RxBufferUpdate(&data->fsp_ctrl, rx_buf);
+		}
 		LOG_DBG("Failed to obtain RX buffer");
 		goto rx_end;
 	}
 
 	ret = net_pkt_write(pkt, rx_buf, len);
 	if (ret < 0) {
+		if (rx_buf_held) {
+			R_RMAC_RxBufferUpdate(&data->fsp_ctrl, rx_buf);
+		}
 		LOG_DBG("Failed to append RX buffer to packet");
 		net_pkt_unref(pkt);
 		goto rx_end;
 	}
 
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 	fsp_err = R_RMAC_RxBufferUpdate(&data->fsp_ctrl, (void *)rx_buf);
 	if (fsp_err != FSP_SUCCESS) {
 		LOG_DBG("Failed to release RX buffer");
 	}
-#endif
 
 	ret = net_recv_data(net_pkt_iface(pkt), pkt);
 	if (ret < 0) {
@@ -349,7 +342,8 @@ static void eth_renesas_ra_init_iface(struct net_if *iface)
 }
 
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *eth_renesas_ra_get_stats(const struct device *dev)
+static struct net_stats_eth *eth_renesas_ra_get_stats(const struct device *dev,
+						      struct net_if *iface __unused)
 {
 	struct eth_renesas_ra_data *data = dev->data;
 
@@ -358,7 +352,7 @@ static struct net_stats_eth *eth_renesas_ra_get_stats(const struct device *dev)
 
 #endif /* CONFIG_NET_STATISTICS_ETHERNET */
 
-const struct device *eth_renesas_ra_get_phy(const struct device *dev)
+const struct device *eth_renesas_ra_get_phy(const struct device *dev, struct net_if *iface __unused)
 {
 	const struct eth_renesas_ra_config *config = dev->config;
 
@@ -373,12 +367,8 @@ static int eth_renesas_ra_tx(const struct device *dev, struct net_pkt *pkt)
 	int ret = 0;
 	uint8_t *tx_buf;
 
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 	tx_buf = data->tx_buf_header[data->tx_buf_idx].buf;
 	data->tx_buf_idx = (data->tx_buf_idx + 1) % (data->tx_buf_num);
-#else
-	tx_buf = data->tx_frame;
-#endif
 
 #if defined(CONFIG_ETH_RENESAS_RA_USE_HW_WRITEBACK)
 	k_sem_reset(&data->tx_sem);
@@ -409,19 +399,14 @@ tx_end:
 		/* wait descriptor write back complete */
 		ret = k_sem_take(&data->tx_sem, RMAC_TX_TIMEOUT);
 
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
-		fsp_err = R_RMAC_TxStatusGet(&data->fsp_ctrl, tx_buf);
-		if (fsp_err != FSP_SUCCESS) {
+		uint8_t *sent_buf = NULL;
+
+		fsp_err = R_RMAC_TxStatusGet(&data->fsp_ctrl, &sent_buf);
+		if (fsp_err != FSP_SUCCESS || sent_buf != tx_buf) {
 			ret = -EIO;
 		}
-#endif
 	}
 #endif
-
-	if (ret) {
-		eth_stats_update_errors_tx(data->iface);
-	}
-
 	return ret;
 }
 
@@ -659,7 +644,6 @@ DEVICE_DT_INST_DEFINE(0, renesas_ra_eswm_init, NULL, &eswm_data, &eswm_config, P
 	}
 
 /* Buffer configuration for device data */
-#if defined(CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY)
 #define ETH_RENESAS_RA_DATA_BUF_MODE ETHER_ZEROCOPY_ENABLE
 #define ETH_TX_BUF_HEADER_DECLARE(idx, n)                                                          \
 	{                                                                                          \
@@ -671,14 +655,6 @@ DEVICE_DT_INST_DEFINE(0, renesas_ra_eswm_init, NULL, &eswm_data, &eswm_config, P
 	}
 #define ETH_RENESAS_RA_DATA_BUF_PROP_DECLARE(n)                                                    \
 	.tx_buf_header = eth##n##_tx_buf_header, .tx_buf_idx = 0, .tx_buf_num = ETH_TX_BUF_NUM(n)
-#else /* CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY */
-#define ETH_RENESAS_RA_DATA_BUF_MODE ETHER_ZEROCOPY_DISABLE
-#define ETH_RENESAS_RA_DATA_BUF_DECLARE(n)                                                         \
-	static uint8_t eth##n##_rx_frame[ETH_BUF_SIZE] __eth_renesas_buf;			   \
-	static uint8_t eth##n##_tx_frame[ETH_BUF_SIZE] __eth_renesas_buf;
-#define ETH_RENESAS_RA_DATA_BUF_PROP_DECLARE(n)                                                    \
-	.rx_frame = eth##n##_rx_frame, .tx_frame = eth##n##_tx_frame
-#endif /* CONFIG_ETH_RENESAS_RA_USE_ZERO_COPY */
 
 #define ETH_RENESAS_RA_INIT(n)                                                                     \
 	BUILD_ASSERT(DT_INST_PROP(n, channel) <= BSP_FEATURE_ETHER_NUM_CHANNELS);                  \

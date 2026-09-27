@@ -7,6 +7,7 @@
 #include <freq.h>
 #include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/dt-bindings/pwm/pwm.h>
+#include <raspberrypi/partitions_0x0_default.dtsi>
 
 #include "pico2_spe-pinctrl.dtsi"
 
@@ -16,6 +17,7 @@
 		zephyr,flash = &flash0;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
+		zephyr,code-partition = &code_partition;
 	};
 
 	aliases {
@@ -58,6 +60,7 @@
 
 &flash0 {
 	reg = <0x10000000 DT_SIZE_M(4)>;
+	ranges = <0x0 0x10000000 DT_SIZE_M(4)>;
 };
 
 &uart0 {
@@ -88,13 +91,15 @@
 
 		local-mac-address = [ca 2f b7 10 23 79];
 
+		phy-handle = <&lan865x_phy>;
+
 		lan865x_mdio: lan865x_mdio {
 			compatible = "microchip,lan865x-mdio";
 			status = "okay";
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			ethernet-phy@0 {
+			lan865x_phy: ethernet-phy@0 {
 				compatible = "microchip,t1s-phy";
 				reg = <0x0>;
 				plca-enable;
@@ -136,6 +141,10 @@
 };
 
 &timer0 {
+	status = "okay";
+};
+
+&vreg {
 	status = "okay";
 };
 

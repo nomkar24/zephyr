@@ -106,8 +106,8 @@ static POOL_SECTION unsigned char __aligned(HEAP_ALIGN) malloc_arena[HEAP_SIZE];
 extern char _heap_sentry[];
 #    define HEAP_SIZE  ROUND_DOWN((POINTER_TO_UINT(_heap_sentry) - HEAP_BASE), HEAP_ALIGN)
 #   else
-#    define HEAP_SIZE	ROUND_DOWN((KB((size_t) CONFIG_SRAM_SIZE) -	\
-		((size_t) HEAP_BASE - (size_t) CONFIG_SRAM_BASE_ADDRESS)), HEAP_ALIGN)
+#    define HEAP_SIZE	ROUND_DOWN((size_t) DT_CHOSEN_SRAM_SIZE -	\
+		((size_t) HEAP_BASE - (size_t) DT_CHOSEN_SRAM_ADDR), HEAP_ALIGN)
 #   endif /* else CONFIG_XTENSA */
 
 #  endif /* else CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE > 0 */
@@ -115,6 +115,11 @@ extern char _heap_sentry[];
 # endif /* else ALLOCATE_HEAP_AT_STARTUP */
 
 Z_LIBC_DATA static struct sys_heap z_malloc_heap;
+
+#if defined(CONFIG_SYS_HEAP_KASAN_MALLOC) && defined(HEAP_STATIC)
+#include <zephyr/sys/heap_kasan.h>
+SYS_HEAP_KASAN_ENABLE(z_malloc_heap, HEAP_SIZE);
+#endif /* CONFIG_SYS_HEAP_KASAN_MALLOC && HEAP_STATIC */
 
 #ifdef CONFIG_MULTITHREADING
 Z_LIBC_DATA SYS_MUTEX_DEFINE(z_malloc_heap_mutex);
@@ -304,34 +309,3 @@ void *realloc(void *ptr, size_t size)
 #endif /* else no malloc arena */
 
 #endif /* CONFIG_COMMON_LIBC_MALLOC */
-
-#ifdef CONFIG_COMMON_LIBC_CALLOC
-void *calloc(size_t nmemb, size_t size)
-{
-	void *ret;
-
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	ret = malloc(size);
-
-	if (ret != NULL) {
-		(void)memset(ret, 0, size);
-	}
-
-	return ret;
-}
-#endif /* CONFIG_COMMON_LIBC_CALLOC */
-
-#ifdef CONFIG_COMMON_LIBC_REALLOCARRAY
-void *reallocarray(void *ptr, size_t nmemb, size_t size)
-{
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-	return realloc(ptr, size);
-}
-#endif /* CONFIG_COMMON_LIBC_REALLOCARRAY */

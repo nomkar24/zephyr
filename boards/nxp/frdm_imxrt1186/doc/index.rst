@@ -62,6 +62,27 @@ For more information about the i.MX RT1186 SoC and FRDM-iMXRT1186 board, see:
 - `FRDM-iMXRT1186 User Guide`_
 - `FRDM-iMXRT1186 Schematics`_
 
+Board Variants
+==============
+
+This board has three variants available:
+
+- ``frdm_imxrt1186/mimxrt1186/cm33``: Runs on the Cortex-M33 core, using
+  internal SRAM and Flash. This is the default bootable core.
+
+- ``frdm_imxrt1186/mimxrt1186/cm7``: Runs on the Cortex-M7 core, using
+  internal SRAM and Flash. Must be started by the CM33 core.
+
+- ``frdm_imxrt1186/mimxrt1186/cm7/extmem``: Runs on the Cortex-M7 core,
+  using external HyperRAM for ``zephyr,sram`` and external HyperFlash for
+  ``zephyr,flash``. This variant is provided for applications that require
+  more RAM or Flash than available in the internal memory. ITCM and DTCM
+  remain available for time-critical code and data.
+
+.. note::
+   When using the ``extmem`` variant, external memory is initialized through
+   J-Link debug scripts to ensure proper configuration before use.
+
 Supported Features
 ==================
 
@@ -103,6 +124,20 @@ by the board for the default configuration:
 +---------------+-----------------+---------------------------+
 | GPIO_AD_16    | ADC             | ADC1 Channel 0            |
 +---------------+-----------------+---------------------------+
+| GPIO_AD_17    | I3C2_PUR        | I3C2 Pull-up (Arduino)    |
++---------------+-----------------+---------------------------+
+| GPIO_AD_18    | I3C2_SCL        | I3C2 SCL (Arduino D15)    |
++---------------+-----------------+---------------------------+
+| GPIO_AD_19    | I3C2_SDA        | I3C2 SDA (Arduino D14)    |
++---------------+-----------------+---------------------------+
+
+.. note::
+   Using I3C2 on the Arduino header requires hardware rework:
+   solder R30/R31 to route Arduino D14/D15 to GPIO_AD_18/19, and move
+   R297/R299 to position 1-3 to disconnect GPIO_EMC_B2_19/20 from the
+   Arduino header. Refer to the FRDM-iMXRT1186 schematic for details.
+   I3C2 shares GPIO_AD_18/19 with LPI2C3 (board EEPROM), so LPI2C3 and
+   the EEPROM must be disabled in overlays that enable I3C2.
 
 System Clock
 ============
@@ -134,6 +169,57 @@ For example, this overlay moves the CM33 ``zephyr,sram`` to DTCM:
 .. code-block:: none
 
    boards/nxp/frdm_imxrt1186/cm33_sram_dtcm.overlay
+
+Ethernet
+========
+
+NETC Ethernet driver supports to manage the Physical Station Interface (PSI).
+NETC DSA driver supports to manage switch ports. Current DSA support is with
+limitation that only switch function is available without management via
+DSA master port. DSA master port support is TODO work.
+
+For FRDM-iMXRT1186, the following network interfaces present:
+
+- ``swp0`` and ``swp1``: user ports which can be used.
+- ``swp2``: DSA CPU port. Not a user port.
+- ``eth0``: DSA conduit port. Not a user port.
+
+On the FRDM-iMXRT1186 board, the two Ethernet connectors are shared between
+the NETC (``ETH0``/``ETH2``) and EtherCAT (``ECAT0``/``ECAT1``) interfaces.
+Set the following jumpers to route the connectors to NETC before using the
+network interfaces:
+
+- ``ETH0`` instead of ``ECAT0``: J12 short pins 1-2, J13 short pins 2-3.
+- ``ETH2`` instead of ``ECAT1``: J18 short pins 1-2, J17 short pins 2-3.
+
+.. note::
+
+   DHCP is expected to work on ``swp0`` and ``swp1``.
+
+.. code-block:: none
+
+                   +--------+                  +--------+
+                   | ENETC1 |                  | ENETC0 |
+                   |        |                  |        |
+                   | Pseudo |                  |  1G    |
+                   |  MAC   |                  |  MAC   |
+                   +--------+                  +--------+
+                       | zero copy interface       |
+   +-------------- +--------+----------------+     |
+   |               | Pseudo |                |     |
+   |               |  MAC   |                |     |
+   |               |        |                |     |
+   |               | Port 4 |                |     |
+   |               +--------+                |     |
+   |           SWITCH       CORE             |     |
+   +--------+ +--------+ +--------+ +--------+     |
+   | Port 0 | | Port 1 | | Port 2 | | Port 3 |     |
+   |        | |        | |        | |        |     |
+   |  1G    | |  1G    | |  1G    | |  1G    |     |
+   |  MAC   | |  MAC   | |  MAC   | |  MAC   |     |
+   +--------+-+--------+-+--------+-+--------+     |
+       |          |          |          |          |
+   NETC External Interfaces (4 switch ports, 1 end-point port)
 
 Serial Port
 ===========

@@ -603,11 +603,9 @@ static void enc28j60_read_packet(const struct device *dev, uint16_t frm_len)
 		eth_enc28j60_read_mem(dev, dummy, 1);
 	}
 
-	net_pkt_set_iface(pkt, context->iface);
-
 	/* Feed buffer frame to IP stack */
 	LOG_DBG("%s: Received packet of length %u", dev->name, lengthfr);
-	if (net_recv_data(net_pkt_iface(pkt), pkt) < 0) {
+	if (net_recv_data(context->iface, pkt) < 0) {
 		net_pkt_unref(pkt);
 	}
 }
@@ -662,6 +660,10 @@ static int eth_enc28j60_rx(const struct device *dev)
 		/* Get the frame length from the rx status vector,
 		 * minus CRC size at the end which is always present
 		 */
+		if (sys_get_le16(info) <= 4U) {
+			LOG_ERR("Invalid enc28j60 frame length %u", sys_get_le16(info));
+			break;
+		}
 		frm_len = sys_get_le16(info) - 4;
 
 		enc28j60_read_packet(dev, frm_len);
@@ -716,23 +718,8 @@ static void eth_enc28j60_rx_thread(void *p1, void *p2, void *p3)
 			/* Clear link change interrupt flag by PHIR reg read */
 			eth_enc28j60_read_phy(dev, ENC28J60_PHY_PHIR, &phir);
 			eth_enc28j60_read_phy(dev, ENC28J60_PHY_PHSTAT2, &phstat2);
-			if (phstat2 & ENC28J60_BIT_PHSTAT2_LSTAT) {
-				LOG_INF("%s: Link up", dev->name);
-				/* We may have been interrupted before L2 init complete
-				 * If so flag that the carrier should be set on in init
-				 */
-				if (context->iface_initialized) {
-					net_eth_carrier_on(context->iface);
-				} else {
-					context->iface_carrier_on_init = true;
-				}
-			} else {
-				LOG_INF("%s: Link down", dev->name);
-
-				if (context->iface_initialized) {
-					net_eth_carrier_off(context->iface);
-				}
-			}
+			net_eth_carrier_set(context->iface,
+					    (phstat2 & ENC28J60_BIT_PHSTAT2_LSTAT) != 0);
 		}
 
 		/* We cannot rely on the PKTIF flag because of errata 6. Call
@@ -745,7 +732,8 @@ static void eth_enc28j60_rx_thread(void *p1, void *p2, void *p3)
 	}
 }
 
-static enum ethernet_hw_caps eth_enc28j60_get_capabilities(const struct device *dev)
+static enum ethernet_hw_caps eth_enc28j60_get_capabilities(const struct device *dev,
+							   struct net_if *iface __unused)
 {
 	ARG_UNUSED(dev);
 
@@ -757,6 +745,7 @@ static enum ethernet_hw_caps eth_enc28j60_get_capabilities(const struct device *
 }
 
 static int eth_enc28j60_set_config(const struct device *dev,
+				   struct net_if *iface __unused,
 				   enum ethernet_config_type type,
 				   const struct ethernet_config *config)
 {
@@ -770,12 +759,6 @@ static int eth_enc28j60_set_config(const struct device *dev,
 		memcpy(context->mac_address, config->mac_address.addr,
 		       sizeof(config->mac_address.addr));
 		eth_enc28j60_init_mac(dev);
-
-		if (context->iface != NULL) {
-			net_if_set_link_addr(context->iface, context->mac_address,
-					     sizeof(context->mac_address),
-					     NET_LINK_ETHERNET);
-		}
 
 		LOG_INF("Set cfg - MAC %02x:%02x:%02x:%02x:%02x:%02x",
 			context->mac_address[0], context->mac_address[1],
@@ -802,13 +785,15 @@ static void eth_enc28j60_iface_init(struct net_if *iface)
 
 	ethernet_init(iface);
 
-	/* The device may have already interrupted us to flag link UP */
-	if (context->iface_carrier_on_init) {
-		net_if_carrier_on(iface);
-	} else {
-		net_if_carrier_off(iface);
-	}
-	context->iface_initialized = true;
+	net_if_carrier_off(iface);
+
+	/* Start interruption-poll thread */
+	k_thread_create(&context->thread, context->thread_stack,
+			CONFIG_ETH_ENC28J60_RX_THREAD_STACK_SIZE,
+			eth_enc28j60_rx_thread,
+			(void *)dev, NULL, NULL,
+			K_PRIO_COOP(CONFIG_ETH_ENC28J60_RX_THREAD_PRIO),
+			0, K_NO_WAIT);
 }
 
 static const struct ethernet_api api_funcs = {
@@ -888,14 +873,6 @@ static int eth_enc28j60_init(const struct device *dev)
 	/* Enable Reception */
 	eth_enc28j60_set_eth_reg(dev, ENC28J60_REG_ECON1,
 				 ENC28J60_BIT_ECON1_RXEN);
-
-	/* Start interruption-poll thread */
-	k_thread_create(&context->thread, context->thread_stack,
-			CONFIG_ETH_ENC28J60_RX_THREAD_STACK_SIZE,
-			eth_enc28j60_rx_thread,
-			(void *)dev, NULL, NULL,
-			K_PRIO_COOP(CONFIG_ETH_ENC28J60_RX_THREAD_PRIO),
-			0, K_NO_WAIT);
 
 	LOG_INF("%s: Initialized", dev->name);
 

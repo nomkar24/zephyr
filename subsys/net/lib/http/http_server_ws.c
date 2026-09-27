@@ -14,6 +14,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/http/service.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/sys/base64.h>
 #include <zephyr/net/websocket.h>
 #include <psa/crypto.h>
@@ -41,10 +42,11 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 	char key_accept[HTTP_SERVER_WS_MAX_SEC_KEY_LEN + sizeof(WS_MAGIC)];
 	char accept[20];
 	size_t accept_len;
-	char tmp[64];
+	char tmp[128];
 	size_t key_len;
 	size_t olen;
 	int ret;
+	psa_status_t psa_status;
 
 	key_len = MIN(sizeof(key_accept) - 1, sizeof(client->ws_sec_key));
 	strncpy(key_accept, client->ws_sec_key, key_len);
@@ -53,8 +55,13 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 	olen = MIN(sizeof(key_accept) - 1 - key_len, sizeof(WS_MAGIC) - 1);
 	memcpy(key_accept + key_len, WS_MAGIC, olen);
 
-	psa_hash_compute(PSA_ALG_SHA_1, key_accept, olen + key_len,
+	psa_status = psa_hash_compute(PSA_ALG_SHA_1, key_accept, olen + key_len,
 			 accept, sizeof(accept), &accept_len);
+	if (psa_status != PSA_SUCCESS) {
+		NET_DBG("Failed to compute hash for websocket key (%d)", psa_status);
+		ret = -EIO;
+		goto error;
+	}
 
 	ret = base64_encode(tmp, sizeof(tmp) - 1, &olen, accept, sizeof(accept));
 	if (ret) {
@@ -80,8 +87,20 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 		goto error;
 	}
 
-	ret = snprintk(tmp, sizeof(tmp), "\r\nUser-Agent: %s\r\n\r\n",
-		       ZEPHYR_USER_AGENT);
+	/* RFC 6455 sec. 4.2.2: if the client offered subprotocols via
+	 * Sec-WebSocket-Protocol, echo the one we selected. The HTTP/1
+	 * parser stores the first token from the client's list in
+	 * ws_sec_protocol; an empty value means the client did not
+	 * negotiate a subprotocol, in which case we omit the header.
+	 */
+	if (client->ws_sec_protocol[0] != '\0') {
+		ret = snprintk(tmp, sizeof(tmp),
+			       "\r\nSec-WebSocket-Protocol: %s\r\nUser-Agent: %s\r\n\r\n",
+			       client->ws_sec_protocol, ZEPHYR_USER_AGENT);
+	} else {
+		ret = snprintk(tmp, sizeof(tmp), "\r\nUser-Agent: %s\r\n\r\n",
+			       ZEPHYR_USER_AGENT);
+	}
 	if (ret < 0 || ret >= sizeof(tmp)) {
 		goto error;
 	}

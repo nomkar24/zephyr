@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "hw_init.h"
+#include <hw_init.h>
 #include <stdint.h>
 #include <esp_cpu.h>
 
@@ -25,7 +25,6 @@
 #include <flash_init.h>
 #include <soc_flash_init.h>
 #include <soc_init.h>
-#include <soc_random.h>
 
 const static char *TAG = "hw_init";
 
@@ -96,8 +95,6 @@ int hardware_init(void)
 
 	check_wdt_reset();
 	config_wdt();
-
-	soc_random_enable();
 
 	return 0;
 }

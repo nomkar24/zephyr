@@ -1,5 +1,5 @@
-# Copyright (c) 2025 Infineon Technologies AG,
-# or an affiliate of Infineon Technologies AG.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+# SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -12,7 +12,8 @@ set(pdl_dev_dir ${pdl_dir}/devices)
 
 # Generate PDL specific SOC defines
 zephyr_library_compile_definitions(CONFIG_SOC_PART_NUMBER)
-zephyr_library_compile_definitions($<UPPER_CASE:${CONFIG_SOC}>)
+# Global (not library-scoped) so offsets.c and other non-library targets also see it.
+zephyr_compile_definitions($<UPPER_CASE:${CONFIG_SOC}>)
 zephyr_library_compile_definitions(${CONFIG_SOC_PART_NUMBER}_device)
 
 # Include directories
@@ -66,5 +67,4 @@ zephyr_library_sources(${pdl_drv_dir}/source/cy_syspm.c)
 zephyr_library_sources(${pdl_drv_dir}/source/cy_syslib.c)
 zephyr_library_sources(${pdl_drv_dir}/source/cy_trigmux.c)
 zephyr_library_sources(${pdl_drv_dir}/source/cy_sysint.c)
-zephyr_library_sources(${pdl_drv_dir}/source/cy_flash.c)
 zephyr_library_sources(${pdl_drv_dir}/source/cy_ram.c)

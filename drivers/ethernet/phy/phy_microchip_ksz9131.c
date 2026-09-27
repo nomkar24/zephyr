@@ -6,6 +6,12 @@
 
 #define DT_DRV_COMPAT microchip_ksz9131
 
+/* Support for LAN8840 using the same driver */
+#ifdef CONFIG_DT_HAS_MICROCHIP_LAN8840_ENABLED
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT microchip_lan8840
+#endif
+
 #include <errno.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
@@ -18,12 +24,36 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(phy_mchp_ksz9131, CONFIG_PHY_LOG_LEVEL);
 
+BUILD_ASSERT(!(IS_ENABLED(CONFIG_DT_HAS_MICROCHIP_KSZ9131_ENABLED) &&
+		IS_ENABLED(CONFIG_DT_HAS_MICROCHIP_LAN8840_ENABLED)),
+		"This driver cannot support KSZ9131 and LAN8840 at the same time."
+);
+
 #include "phy_mii.h"
+
+/* KSZ9131 DLL control registers are accessed through Clause-22 indirect
+ * MMD access (device 2, registers 76 and 77). Bit 12 bypasses the DLL.
+ */
+#define KSZ9131_MMD_DEV_COMMON_CTRL 2
+#define KSZ9131_RXC_DLL_CTRL        76
+#define KSZ9131_TXC_DLL_CTRL        77
+#define KSZ9131_DLL_ENABLE_DELAY    0
+#define KSZ9131_DLL_DISABLE_DELAY   BIT(12)
+#define KSZ9131_DLL_DISABLE_MASK    BIT(12)
+
+enum ksz9131_rgmii_delay {
+	RGMII_NONE,
+	RGMII_ID,
+	RGMII_RX_ID,
+	RGMII_TX_ID,
+	RGMII_DELAY_UNSPEC
+};
 
 struct mchp_ksz9131_config {
 	uint8_t phy_addr;
 	const struct device *const mdio;
 	enum phy_link_speed default_speeds;
+	enum ksz9131_rgmii_delay rgmii_delay_type;
 #if DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios)
 	const struct gpio_dt_spec interrupt_gpio;
 #endif
@@ -45,9 +75,16 @@ struct mchp_ksz9131_data {
 #define PHY_ID_KSZ9131     0x00221640
 #define PHY_ID_KSZ9131_MSK (~0xF)
 
+#define PHY_ID_LAN8840     0x00221650
+#define PHY_ID_LAN8840_MSK (~0xF)
+
 #define PHY_KSZ9131_ICS_REG               0x1B
 #define PHY_KSZ9131_ICS_LINK_DOWN_IE_MASK BIT(10)
 #define PHY_KSZ9131_ICS_LINK_UP_IE_MASK   BIT(8)
+
+#define PHY_LAN8840_ICS_REG               0x18
+#define PHY_LAN8840_ICS_LINK_DOWN_IE_MASK BIT(2)
+#define PHY_LAN8840_ICS_LINK_UP_IE_MASK   BIT(0)
 
 #define USING_INTERRUPT_GPIO							\
 		UTIL_OR(DT_ALL_INST_HAS_PROP_STATUS_OKAY(int_gpios),		\
@@ -136,7 +173,8 @@ static int phy_check_ksz9131_id(const struct device *dev)
 	}
 	phy_id |= value;
 
-	if ((phy_id & PHY_ID_KSZ9131_MSK) != PHY_ID_KSZ9131) {
+	if (((phy_id & PHY_ID_KSZ9131_MSK) != PHY_ID_KSZ9131) &&
+		((phy_id & PHY_ID_LAN8840_MSK) != PHY_ID_LAN8840)) {
 		LOG_ERR("PHY (%d) ID 0x%X not as expected", cfg->phy_addr, phy_id);
 		return -EINVAL;
 	}
@@ -194,18 +232,28 @@ static int phy_mchp_ksz9131_clear_interrupt(struct mchp_ksz9131_data *data)
 static int phy_mchp_ksz9131_config_interrupt(const struct device *dev)
 {
 	struct mchp_ksz9131_data *data = dev->data;
+	uint16_t reg_ics;
+	uint16_t reg_msk;
 	uint16_t reg_val;
 	int ret;
 
+	if (IS_ENABLED(CONFIG_DT_HAS_MICROCHIP_LAN8840_ENABLED)) {
+		reg_ics = PHY_LAN8840_ICS_REG;
+		reg_msk = PHY_LAN8840_ICS_LINK_UP_IE_MASK | PHY_LAN8840_ICS_LINK_DOWN_IE_MASK;
+	} else {
+		reg_ics = PHY_KSZ9131_ICS_REG;
+		reg_msk = PHY_KSZ9131_ICS_LINK_UP_IE_MASK | PHY_KSZ9131_ICS_LINK_DOWN_IE_MASK;
+	}
+
 	/* Read Interrupt Control/Status register to write back */
-	ret = ksz9131_read(dev, PHY_KSZ9131_ICS_REG, &reg_val);
+	ret = ksz9131_read(dev, reg_ics, &reg_val);
 	if (ret < 0) {
 		return ret;
 	}
-	reg_val |= PHY_KSZ9131_ICS_LINK_UP_IE_MASK | PHY_KSZ9131_ICS_LINK_DOWN_IE_MASK;
+	reg_val |= reg_msk;
 
 	/* Write settings to Interrupt Control/Status register */
-	ret = ksz9131_write(dev, PHY_KSZ9131_ICS_REG, reg_val);
+	ret = ksz9131_write(dev, reg_ics, reg_val);
 	if (ret < 0) {
 		return ret;
 	}
@@ -277,7 +325,7 @@ static int phy_mchp_ksz9131_autonegotiate(const struct device *dev)
 
 		attempts++;
 		if (bmsr & MII_BMSR_AUTONEG_COMPLETE) {
-			LOG_DBG("PHY (%d) auto-negotiate completed after %d checkes",
+			LOG_DBG("PHY (%d) auto-negotiate completed after %d checks",
 				cfg->phy_addr, attempts);
 			break;
 		}
@@ -539,6 +587,105 @@ done:
 }
 #endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios) */
 
+static int ksz9131_mmd_select(const struct device *dev, uint8_t devad, uint16_t reg)
+{
+	const struct mchp_ksz9131_config *cfg = dev->config;
+	int ret;
+
+	ret = mdio_write(cfg->mdio, cfg->phy_addr, MII_MMD_ACR, devad);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = mdio_write(cfg->mdio, cfg->phy_addr, MII_MMD_AADR, reg);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return mdio_write(cfg->mdio, cfg->phy_addr, MII_MMD_ACR, 0x4000U | devad);
+}
+
+static int ksz9131_mmd_read_c22(const struct device *dev, uint8_t devad, uint16_t reg,
+				uint16_t *val)
+{
+	const struct mchp_ksz9131_config *cfg = dev->config;
+	int ret;
+
+	ret = ksz9131_mmd_select(dev, devad, reg);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return mdio_read(cfg->mdio, cfg->phy_addr, MII_MMD_AADR, val);
+}
+
+static int ksz9131_mmd_write_c22(const struct device *dev, uint8_t devad, uint16_t reg,
+				 uint16_t val)
+{
+	const struct mchp_ksz9131_config *cfg = dev->config;
+	int ret;
+
+	ret = ksz9131_mmd_select(dev, devad, reg);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return mdio_write(cfg->mdio, cfg->phy_addr, MII_MMD_AADR, val);
+}
+
+static int ksz9131_mmd_modify_c22(const struct device *dev, uint8_t devad, uint16_t reg,
+				  uint16_t mask, uint16_t val)
+{
+	uint16_t tmp;
+	int ret;
+
+	ret = ksz9131_mmd_read_c22(dev, devad, reg, &tmp);
+	if (ret < 0) {
+		return ret;
+	}
+
+	tmp = (tmp & ~mask) | (val & mask);
+
+	return ksz9131_mmd_write_c22(dev, devad, reg, tmp);
+}
+
+static int ksz9131_enable_dll_delays(const struct device *dev)
+{
+	const struct mchp_ksz9131_config *const cfg = dev->config;
+	int ret = 0;
+	uint16_t rxcdll_val, txcdll_val;
+
+	switch (cfg->rgmii_delay_type) {
+	case RGMII_NONE:
+		rxcdll_val = KSZ9131_DLL_DISABLE_DELAY;
+		txcdll_val = KSZ9131_DLL_DISABLE_DELAY;
+		break;
+	case RGMII_ID:
+		rxcdll_val = KSZ9131_DLL_ENABLE_DELAY;
+		txcdll_val = KSZ9131_DLL_ENABLE_DELAY;
+		break;
+	case RGMII_RX_ID:
+		rxcdll_val = KSZ9131_DLL_ENABLE_DELAY;
+		txcdll_val = KSZ9131_DLL_DISABLE_DELAY;
+		break;
+	case RGMII_TX_ID:
+		rxcdll_val = KSZ9131_DLL_DISABLE_DELAY;
+		txcdll_val = KSZ9131_DLL_ENABLE_DELAY;
+		break;
+	default:
+		return 0;
+	}
+	ret = ksz9131_mmd_modify_c22(dev, KSZ9131_MMD_DEV_COMMON_CTRL, KSZ9131_RXC_DLL_CTRL,
+				     KSZ9131_DLL_DISABLE_MASK, rxcdll_val);
+	if (ret < 0) {
+		return ret;
+	}
+	ret = ksz9131_mmd_modify_c22(dev, KSZ9131_MMD_DEV_COMMON_CTRL, KSZ9131_TXC_DLL_CTRL,
+				     KSZ9131_DLL_DISABLE_MASK, txcdll_val);
+
+	return ret;
+}
+
 static int phy_mchp_ksz9131_init(const struct device *dev)
 {
 	const struct mchp_ksz9131_config *const cfg = dev->config;
@@ -559,7 +706,11 @@ static int phy_mchp_ksz9131_init(const struct device *dev)
 	if (ret < 0) {
 		return ret;
 	}
-
+	ret = ksz9131_enable_dll_delays(dev);
+	if (ret < 0) {
+		LOG_ERR("Failed to enable KSZ9131 DLL delays");
+		return ret;
+	}
 	ret = ksz9131_init_int_gpios(dev);
 	if (ret < 0) {
 		return ret;
@@ -591,6 +742,8 @@ static DEVICE_API(ethphy, mchp_ksz9131_phy_api) = {
 		.phy_addr = DT_INST_REG_ADDR(n),				\
 		.mdio = DEVICE_DT_GET(DT_INST_BUS(n)),				\
 		.default_speeds = PHY_INST_GENERATE_DEFAULT_SPEEDS(n),		\
+		.rgmii_delay_type =		\
+			DT_INST_ENUM_IDX_OR(n, microchip_rgmii_delay, RGMII_DELAY_UNSPEC), \
 		INTERRUPT_GPIO(n)						\
 	};									\
 										\

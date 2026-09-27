@@ -1,5 +1,6 @@
 /*
  * Copyright 2024 (c) TOKITA Hiroshi
+ * Copyright 2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,8 +40,13 @@ static inline uint8_t bytes_per_pixel(enum display_pixel_format pixel_format)
 {
 	switch (pixel_format) {
 	case PIXEL_FORMAT_ARGB_8888:
+	case PIXEL_FORMAT_XRGB_8888:
+	case PIXEL_FORMAT_ABGR_8888:
+	case PIXEL_FORMAT_RGBA_8888:
+	case PIXEL_FORMAT_BGRA_8888:
 		return 4;
 	case PIXEL_FORMAT_RGB_888:
+	case PIXEL_FORMAT_BGR_888:
 		return 3;
 	case PIXEL_FORMAT_RGB_565:
 	case PIXEL_FORMAT_RGB_565X:
@@ -92,10 +98,10 @@ static void verify_background_color(int x, int y, size_t width, size_t height, u
 	for (size_t i = 0; i < width * height; i++) {
 		switch (bpp) {
 		case 4:
-			zassert_equal(buf32[i], color, "@%d", i);
+			zassert_equal(buf32[i], color, "@%zu", i);
 			break;
 		case 2:
-			zassert_equal(buf16[i], (uint16_t)color, "@%d", i);
+			zassert_equal(buf16[i], (uint16_t)color, "@%zu", i);
 			break;
 		case 1:
 			if (is_vtiled) {
@@ -106,13 +112,13 @@ static void verify_background_color(int x, int y, size_t width, size_t height, u
 
 				uint8_t *tptr = disp_buffer + (tile * width + x);
 
-				zassert_equal(!!(*tptr & BIT(y)), !!(color), "@%d", i);
+				zassert_equal(!!(*tptr & BIT(y)), !!(color), "@%zu", i);
 			} else if (is_htiled) {
 				uint8_t *tptr = disp_buffer + i / 8;
 
-				zassert_equal(!!(*tptr & BIT(i % 8)), !!(color), "@%d", i);
+				zassert_equal(!!(*tptr & BIT(i % 8)), !!(color), "@%zu", i);
 			} else {
-				zassert_equal(buf8[i], (uint8_t)color, "@%d", i);
+				zassert_equal(buf8[i], (uint8_t)color, "@%zu", i);
 			}
 			break;
 		}

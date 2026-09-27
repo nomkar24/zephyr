@@ -305,18 +305,7 @@ static int mcux_flexcan_start(const struct device *dev)
 	timing.rJumpwidth = data->timing.sjw - 1U;
 	timing.phaseSeg1 = data->timing.phase_seg1 - 1U;
 	timing.phaseSeg2 = data->timing.phase_seg2 - 1U;
-#if (defined(FSL_FEATURE_FLEXCAN_HAS_ENHANCED_BIT_TIMING_REG) && \
-	     FSL_FEATURE_FLEXCAN_HAS_ENHANCED_BIT_TIMING_REG)
-	if (UTIL_AND(IS_ENABLED(CONFIG_CAN_MCUX_FLEXCAN_FD), config->flexcan_fd)) {
-		/* No propagation segment configuration, so prop_seg must be 0 */
-		timing.propSeg = data->timing.prop_seg;
-	} else {
-		/* Use standard configuration for classic CAN mode */
-		timing.propSeg = data->timing.prop_seg - 1U;
-	}
-#else
 	timing.propSeg = data->timing.prop_seg - 1U;
-#endif
 	FLEXCAN_SetTimingConfig(base, &timing);
 
 #ifdef CONFIG_CAN_MCUX_FLEXCAN_FD
@@ -438,7 +427,7 @@ static int mcux_flexcan_set_mode(const struct device *dev, can_mode_t mode)
 	}
 
 	if ((mode & CAN_MODE_FD) != 0 && (mode & CAN_MODE_3_SAMPLES) != 0) {
-		LOG_ERR("triple samling is not supported in CAN FD mode");
+		LOG_ERR("triple sampling is not supported in CAN FD mode");
 		return -ENOTSUP;
 	}
 
@@ -867,16 +856,6 @@ unlock:
 	return alloc;
 }
 
-static void mcux_flexcan_set_state_change_callback(const struct device *dev,
-						   can_state_change_callback_t callback,
-						   void *user_data)
-{
-	struct mcux_flexcan_data *data = dev->data;
-
-	data->common.state_change_cb = callback;
-	data->common.state_change_cb_user_data = user_data;
-}
-
 #ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
 static int mcux_flexcan_recover(const struct device *dev, k_timeout_t timeout)
 {
@@ -958,8 +937,6 @@ static inline void mcux_flexcan_transfer_error_status(const struct device *dev,
 	const struct mcux_flexcan_config *config = dev->config;
 	struct mcux_flexcan_data *data = dev->data;
 	CAN_Type *base = get_base(dev);
-	const can_state_change_callback_t cb = data->common.state_change_cb;
-	void *cb_data = data->common.state_change_cb_user_data;
 	can_tx_callback_t function;
 	void *arg;
 	int alloc;
@@ -993,10 +970,7 @@ static inline void mcux_flexcan_transfer_error_status(const struct device *dev,
 	(void)mcux_flexcan_get_state(dev, &state, &err_cnt);
 	if (data->state != state) {
 		data->state = state;
-
-		if (cb != NULL) {
-			cb(dev, state, err_cnt, cb_data);
-		}
+		can_fire_state_change_callbacks(dev, state, err_cnt);
 	}
 
 	if (state == CAN_STATE_BUS_OFF) {
@@ -1146,7 +1120,7 @@ static FLEXCAN_CALLBACK(mcux_flexcan_transfer_callback)
 		 * Unhandled status during Message Buffer processing.
 		 * If result field is 0xFF, it means no message buffer interrupt occurred.
 		 */
-		__fallthrough;
+		break;
 	default:
 		LOG_WRN("Unhandled status 0x%08x (result = 0x%016llx)",
 			status, status_flags);
@@ -1160,7 +1134,7 @@ static void mcux_flexcan_isr(const struct device *dev)
 	CAN_Type *base = get_base(dev);
 
 	FLEXCAN_BusoffErrorHandleIRQ(base, &data->handle);
-	FLEXCAN_MbHandleIRQ(base, &data->handle, 0U, config->number_of_mb);
+	FLEXCAN_MbHandleIRQ(base, &data->handle, 0U, config->number_of_mb - 1U);
 }
 
 static int mcux_flexcan_init(const struct device *dev)
@@ -1174,13 +1148,13 @@ static int mcux_flexcan_init(const struct device *dev)
 
 	if (config->common.phy != NULL) {
 		if (!device_is_ready(config->common.phy)) {
-			LOG_ERR("CAN transceiver not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->common.phy);
 			return -ENODEV;
 		}
 	}
 
 	if (!device_is_ready(config->clock_dev)) {
-		LOG_ERR("clock device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->clock_dev);
 		return -ENODEV;
 	}
 
@@ -1207,6 +1181,7 @@ static int mcux_flexcan_init(const struct device *dev)
 	LOG_DBG("Message Buffers: %d, RX MB: %d, TX MB: %d",
 		 config->number_of_mb, config->rx_mb, config->tx_mb);
 
+	sys_slist_init(&data->common.state_change_callbacks);
 	k_mutex_init(&data->rx_mutex);
 	k_mutex_init(&data->tx_mutex);
 	k_sem_init(&data->tx_allocs_sem, config->tx_mb, config->tx_mb);
@@ -1294,11 +1269,6 @@ static int mcux_flexcan_init(const struct device *dev)
 
 #ifdef CONFIG_CAN_MCUX_FLEXCAN_FD
 	if (config->flexcan_fd) {
-#if (defined(FSL_FEATURE_FLEXCAN_HAS_ENHANCED_BIT_TIMING_REG) && \
-	     FSL_FEATURE_FLEXCAN_HAS_ENHANCED_BIT_TIMING_REG)
-		/* No propagation segment configuration, so prop_seg must be 0 */
-		flexcan_config.timingConfig.propSeg = data->timing.prop_seg;
-#endif
 		flexcan_config.timingConfig.frJumpwidth = data->timing_data.sjw - 1U;
 		flexcan_config.timingConfig.fpropSeg = data->timing_data.prop_seg;
 		flexcan_config.timingConfig.fphaseSeg1 = data->timing_data.phase_seg1 - 1U;
@@ -1343,7 +1313,6 @@ static DEVICE_API(can, mcux_flexcan_driver_api) __maybe_unused = {
 #ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
 	.recover = mcux_flexcan_recover,
 #endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
-	.set_state_change_callback = mcux_flexcan_set_state_change_callback,
 	.get_core_clock = mcux_flexcan_get_core_clock,
 	.get_max_filters = mcux_flexcan_get_max_filters,
 	/*
@@ -1386,7 +1355,6 @@ static DEVICE_API(can, mcux_flexcan_fd_driver_api) = {
 #ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
 	.recover = mcux_flexcan_recover,
 #endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
-	.set_state_change_callback = mcux_flexcan_set_state_change_callback,
 	.get_core_clock = mcux_flexcan_get_core_clock,
 	.get_max_filters = mcux_flexcan_get_max_filters,
 	/*

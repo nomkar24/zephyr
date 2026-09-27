@@ -400,8 +400,11 @@ static inline uint8_t get_packet_length(const struct device *dev)
 static inline bool verify_rxfifo_validity(const struct device *dev,
 					  uint8_t pkt_len)
 {
-	/* packet should be at least 3 bytes as a ACK */
-	if (pkt_len < 3 ||
+	/* packet should be at least 3 bytes as a ACK and must not exceed
+	 * the IEEE 802.15.4 maximum PHY packet size; otherwise pkt_len
+	 * (radio-supplied, up to 255) would drive an oversized net_buf alloc.
+	 */
+	if (!IN_RANGE(pkt_len, 3, IEEE802154_MAX_PHY_PACKET_SIZE) ||
 	    read_reg_num_rxbytes(dev) > (pkt_len + CC1200_FCS_LEN)) {
 		return false;
 	}
@@ -612,7 +615,7 @@ static int cc1200_tx(const struct device *dev,
 	bool status = false;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 

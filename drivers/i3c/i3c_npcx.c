@@ -133,7 +133,7 @@ enum npcx_i3c_mctrl_type {
 #define HDR_DDR_CMD_AND_CRC_SZ_WORD 0x2 /* 2 words =  Command(1 word) + CRC(1 word) */
 #define HDR_RD_CMD                  0x80
 
-/* I3C moudle and port parsing from instance_id */
+/* I3C module and port parsing from instance_id */
 #define GET_MODULE_ID(inst_id) ((inst_id & 0xf0) >> 4)
 #define GET_PORT_ID(inst_id)   (inst_id & 0xf)
 
@@ -469,7 +469,7 @@ static inline int npcx_i3c_request_auto_ibi(struct i3c_reg *inst)
  * brief:  Controller emit start and send address
  *
  * param[in] inst     Pointer to I3C register.
- * param[in] addr     Dyamic address for xfer or 0x7E for CCC command.
+ * param[in] addr     Dynamic address for xfer or 0x7E for CCC command.
  * param[in] op_type  Request type.
  * param[in] is_read  Read(true) or write(false) operation.
  * param[in] read_sz  Read size in bytes.
@@ -1262,7 +1262,7 @@ static int npcx_i3c_transfer(const struct device *dev, struct i3c_device_desc *t
 	/* Iterate over all the messages */
 	for (int i = 0; i < num_msgs; i++) {
 		/*
-		 * Check message is read or write operaion.
+		 * Check message is read or write operation.
 		 * For write operation, check the last data byte of a transmit message.
 		 */
 		bool is_read = (msgs[i].flags & I3C_MSG_RW_MASK) == I3C_MSG_READ;
@@ -1315,7 +1315,7 @@ static int npcx_i3c_transfer(const struct device *dev, struct i3c_device_desc *t
 			op_type = NPCX_I3C_MCTRL_TYPE_I3C; /* Set operation type SDR */
 
 			/*
-			 * SDR, send boradcast header(0x7E)
+			 * SDR, send broadcast header(0x7E)
 			 *
 			 * Two ways to do read/write transfer (SDR mode).
 			 * 1. [S] + [0x7E]    + [address] + [data] + [Sr or P]
@@ -1496,9 +1496,8 @@ static int npcx_i3c_do_daa(const struct device *dev)
 			LOG_DBG("DAA: Rcvd PID 0x%04x%08x", vendor_id, part_no);
 
 			/* Find a usable address during ENTDAA */
-			ret = i3c_dev_list_daa_addr_helper(&data->common.attached_dev.addr_slots,
-							   &config->common.dev_list, pid, false,
-							   false, &target, &dyn_addr);
+			ret = i3c_dev_list_daa_addr_helper(dev, pid, false, false, &target,
+							   &dyn_addr);
 			if (ret != 0) {
 				LOG_ERR("%s: Assign new DA error", __func__);
 				break;
@@ -1513,6 +1512,12 @@ static int npcx_i3c_do_daa(const struct device *dev)
 				target->dynamic_addr = dyn_addr;
 				target->bcr = rx_buf[6];
 				target->dcr = rx_buf[7];
+
+				int aret = i3c_attach_i3c_device(target);
+
+				if (aret != 0 && aret != -EALREADY) {
+					LOG_ERR("Failed to attach target");
+				}
 			}
 
 			/* Mark the address as I3C device */
@@ -1527,7 +1532,7 @@ static int npcx_i3c_do_daa(const struct device *dev)
 			if ((target != NULL) && (target->static_addr != 0U) &&
 			    (dyn_addr != target->static_addr)) {
 				i3c_addr_slots_mark_free(&data->common.attached_dev.addr_slots,
-							 dyn_addr);
+							 target->static_addr);
 			}
 
 			/* Emit process DAA again to send the address to the device */
@@ -1915,7 +1920,7 @@ static int npcx_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc 
 
 	LOG_DBG("IBI enabling for 0x%02x (BCR 0x%02x)", target->dynamic_addr, target->bcr);
 
-	msb = (target->dynamic_addr & BIT(6)) == BIT(6); /* Check addess(7-bit) MSB enable */
+	msb = (target->dynamic_addr & BIT(6)) == BIT(6); /* Check address(7-bit) MSB enable */
 	has_mandatory_byte = i3c_ibi_has_payload(target);
 
 	/*
@@ -2048,6 +2053,7 @@ out_ibi_disable:
 }
 #endif /* CONFIG_I3C_USE_IBI */
 
+#ifdef CONFIG_I3C_USE_IBI
 static int npcx_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *request)
 {
 	const struct npcx_i3c_config *config = dev->config;
@@ -2140,6 +2146,7 @@ static int npcx_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *r
 
 	return 0;
 }
+#endif /* CONFIG_I3C_USE_IBI */
 
 #ifdef CONFIG_I3C_NPCX_DMA
 static uint16_t npcx_i3c_target_get_mdmafb_count(const struct device *dev)
@@ -2284,7 +2291,8 @@ static int npcx_i3c_target_xfer_end_handle(const struct device *dev)
 	const struct npcx_i3c_config *config = dev->config;
 	struct i3c_reg *inst = config->base;
 	struct mdma_reg *mdma_inst = config->mdma_base;
-	const struct i3c_target_callbacks *target_cb = data->target_config->callbacks;
+	const struct i3c_target_callbacks *target_cb =
+		(data->target_config != NULL) ? data->target_config->callbacks : NULL;
 	bool is_i3c_start = IS_BIT_SET(inst->INTMASKED, NPCX_I3C_INTMASKED_START);
 	bool is_i3c_stop = IS_BIT_SET(inst->INTMASKED, NPCX_I3C_INTMASKED_STOP);
 	enum npcx_i3c_oper_state op_state = get_oper_state(dev);
@@ -2558,7 +2566,7 @@ static int npcx_i3c_apply_cntlr_config(const struct device *dev)
 	uint8_t bamatch;
 	int ret;
 
-	/* I3C module mdma cotroller or target mode select */
+	/* I3C module mdma controller or target mode select */
 	npcx_i3c_target_sel(idx_module, false);
 
 	/* Disable all interrupts */
@@ -2609,7 +2617,7 @@ static int npcx_i3c_apply_target_config(const struct device *dev)
 	int ret;
 	uint64_t pid;
 
-	/* I3C module mdma cotroller or target mode select */
+	/* I3C module mdma controller or target mode select */
 	npcx_i3c_target_sel(idx_module, true);
 
 	/* Set bus available match value in target register */
@@ -2685,7 +2693,7 @@ static void npcx_i3c_dev_init(const struct device *dev)
 			SET_FIELD(inst->MCONFIG, NPCX_I3C_MCONFIG_CTRENA, MCONFIG_CTRENA_CAPABLE);
 			inst->CONFIG |= BIT(NPCX_I3C_CONFIG_TGTENA); /* Target mode enable */
 		} else {
-			npcx_i3c_target_sel(idx_module, false); /* Set mdma as controlelr */
+			npcx_i3c_target_sel(idx_module, false); /* Set mdma as controller */
 			/* Primary Controller enable */
 			SET_FIELD(inst->MCONFIG, NPCX_I3C_MCONFIG_CTRENA, MCONFIG_CTRENA_ON);
 		}
@@ -2758,6 +2766,22 @@ static int npcx_i3c_config_get(const struct device *dev, enum i3c_config_type ty
 	return 0;
 }
 
+static void npcx_i3c_target_log_errwarn(const struct device *dev, uint32_t errwarn)
+{
+	uint32_t faults = errwarn & ~BIT(NPCX_I3C_ERRWARN_URUNNACK);
+
+	/* Let's not be verbose about this - the controller may be simply
+	 * polling us.
+	 */
+	if (IS_BIT_SET(errwarn, NPCX_I3C_ERRWARN_URUNNACK)) {
+		LOG_DBG("%s: no TX data pending, read request NACKed", dev->name);
+	}
+
+	if (faults != 0U) {
+		LOG_ERR("%s: Error %#x", dev->name, faults);
+	}
+}
+
 static void npcx_i3c_target_isr(const struct device *dev)
 {
 	struct npcx_i3c_data *data = dev->data;
@@ -2765,7 +2789,8 @@ static void npcx_i3c_target_isr(const struct device *dev)
 	struct i3c_config_target *config_tgt = &data->config_target;
 	struct i3c_target_config *target_config = data->target_config;
 	struct i3c_reg *inst = config->base;
-	const struct i3c_target_callbacks *target_cb = data->target_config->callbacks;
+	const struct i3c_target_callbacks *target_cb =
+		(target_config != NULL) ? target_config->callbacks : NULL;
 
 #ifdef CONFIG_I3C_NPCX_DMA
 	struct mdma_reg *mdma_inst = config->mdma_base;
@@ -2847,8 +2872,10 @@ static void npcx_i3c_target_isr(const struct device *dev)
 
 		/* Check error or warning has occurred */
 		if (IS_BIT_SET(inst->INTMASKED, NPCX_I3C_INTMASKED_ERRWARN)) {
-			LOG_ERR("%s: Error %#x", __func__, inst->ERRWARN);
-			inst->ERRWARN = inst->ERRWARN;
+			uint32_t errwarn = inst->ERRWARN;
+
+			npcx_i3c_target_log_errwarn(dev, errwarn);
+			inst->ERRWARN = errwarn;
 		}
 
 		/* Check incoming header matched target dynamic address */
@@ -3067,7 +3094,8 @@ static int npcx_i3c_init(const struct device *dev)
 
 	/* Check I3C is controller mode and target device exist in device tree */
 	if ((config->common.dev_list.num_i3c > 0) &&
-	    GET_FIELD(inst->MCONFIG, NPCX_I3C_MCONFIG_CTRENA) == MCONFIG_CTRENA_ON) {
+	    GET_FIELD(inst->MCONFIG, NPCX_I3C_MCONFIG_CTRENA) == MCONFIG_CTRENA_ON &&
+	    !(config->common.flags & I3C_CONTROLLER_FLAG_DISABLE_BUS_INIT)) {
 		/* Perform bus initialization */
 		ret = i3c_bus_init(dev, &config->common.dev_list);
 		if (ret != 0) {
@@ -3136,6 +3164,7 @@ static DEVICE_API(i3c, npcx_i3c_driver_api) = {
 		.common.dev_list.num_i3c = ARRAY_SIZE(npcx_i3c_device_array_##id),                 \
 		.common.dev_list.i2c = npcx_i3c_i2c_device_array_##id,                             \
 		.common.dev_list.num_i2c = ARRAY_SIZE(npcx_i3c_i2c_device_array_##id),             \
+		.common.flags = I3C_CONTROLLER_CONFIG_FLAGS_DT_INST(id),                           \
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id),                                      \
 		.instance_id = DT_INST_PROP(id, instance_id),                                      \
 		.clocks.i3c_pp_scl_hz = DT_INST_PROP_OR(id, i3c_scl_hz, 0),                        \
@@ -3157,6 +3186,7 @@ static DEVICE_API(i3c, npcx_i3c_driver_api) = {
 		.config_target.max_read_len = DT_INST_PROP_OR(id, maximum_read, 0),                \
 		.config_target.max_write_len = DT_INST_PROP_OR(id, maximum_write, 0),              \
 		.config_target.supported_hdr = false,                                              \
+		.target_config = NULL,                                                             \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(id, npcx_i3c_init, NULL, &npcx_i3c_data_##id, &npcx_i3c_config_##id, \
 			      POST_KERNEL, CONFIG_I3C_CONTROLLER_INIT_PRIORITY,                    \

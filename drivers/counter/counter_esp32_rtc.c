@@ -10,9 +10,15 @@
 #include <esp_rom_sys.h>
 #include <hal/rtc_timer_ll.h>
 
-#if defined(SOC_RTC_TIMER_V2_SUPPORTED) && SOC_RTC_TIMER_V2_SUPPORTED
+#if defined(SOC_RTC_TIMER_V2) && SOC_RTC_TIMER_V2
 #define SOC_HAS_LP_TIMER 1
 #include <soc/lp_timer_struct.h>
+#if defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C61) ||                   \
+	defined(CONFIG_SOC_SERIES_ESP32P4)
+#define LP_TIMER_INT_ST_ALARM LP_TIMER.int_st.soc_wakeup_int_st
+#else
+#define LP_TIMER_INT_ST_ALARM LP_TIMER.int_st.alarm
+#endif
 #else
 #define SOC_HAS_LP_TIMER 0
 #include <soc/rtc_cntl_reg.h>
@@ -220,7 +226,7 @@ static uint32_t counter_esp32_get_pending_int(const struct device *dev)
 	ARG_UNUSED(dev);
 
 #if SOC_HAS_LP_TIMER
-	return LP_TIMER.int_st.alarm;
+	return LP_TIMER_INT_ST_ALARM;
 #else
 	uint32_t rc = READ_PERI_REG(RTC_CNTL_INT_ST_REG) & RTC_CNTL_MAIN_TIMER_INT_ST;
 
@@ -285,7 +291,7 @@ static void IRAM_ATTR counter_esp32_isr(void *arg)
 	uint32_t now;
 
 #if SOC_HAS_LP_TIMER
-	if (!LP_TIMER.int_st.alarm) {
+	if (!LP_TIMER_INT_ST_ALARM) {
 		return;
 	}
 #else

@@ -20,7 +20,7 @@
 #include <fsl_io_mux.h>
 #include "soc.h"
 #include "flexspi_clock_setup.h"
-#include "fsl_ocotp.h"
+#include <fsl_ocotp.h>
 
 #define NON_AON_PINS_START      0
 #define NON_AON_PINS_BREAK      21
@@ -163,6 +163,10 @@ __weak __ramfunc void clock_init(void)
 	GAU_BG->CTRL &= ~BG_CTRL_PD_MASK;
 #endif /* GAU */
 
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(gdma), okay))
+	RESET_PeripheralReset(kGDMA_RST_SHIFT_RSTn);
+#endif
+
 /* Any flexcomm can be USART */
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm0), nxp_lpc_usart, okay)) && CONFIG_SERIAL
 	CLOCK_SetFRGClock(&(const clock_frg_clk_config_t){0, kCLOCK_FrgPllDiv, 255, 0});
@@ -267,6 +271,9 @@ __weak __ramfunc void clock_init(void)
 	CLOCK_AttachClk(kAUDIO_PLL_to_MCLK_CLK);
 	CLOCK_SetClkDiv(kCLOCK_DivMclkClk, 1);
 	SYSCTL1->MCLKPINDIR = SYSCTL1_MCLKPINDIR_MCLKPINDIR_MASK;
+#else
+	/* Deinitialization of the AVPLL. */
+	CLOCK_DeinitAvPll();
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lcdic)) && CONFIG_MIPI_DBI_NXP_LCDIC
@@ -302,9 +309,16 @@ __weak __ramfunc void clock_init(void)
 	CLOCK_EnableUsbhsPhyClock();
 #endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet)) && CONFIG_NET_L2_ETHERNET
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet)) && CONFIG_NET_L2_ETHERNET && CONFIG_ETH_DRIVER
+	/* Re-assert TDDR_PDB: MCUboot may have cleared it
+	 * via CLOCK_DeinitTddrRefClk() in soc_early_init_hook()
+	 */
+	SYSCTL2->PLL_CTRL |= SYSCTL2_PLL_CTRL_TDDR_PDB_MASK;
 	RESET_PeripheralReset(kENET_IPG_RST_SHIFT_RSTn);
 	RESET_PeripheralReset(kENET_IPG_S_RST_SHIFT_RSTn);
+#else
+	/* Deinitialize TDDR PLL. */
+	CLOCK_DeinitTddrRefClk();
 #endif
 
 }

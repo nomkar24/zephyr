@@ -10,10 +10,6 @@ config INPUT
 
 if LVGL
 
-choice LV_COLOR_DEPTH
-	default LV_COLOR_DEPTH_16
-endchoice
-
 config LV_COLOR_16_SWAP
 	default y
 
@@ -52,5 +48,13 @@ config DISPLAY_INIT_PRIORITY
 	default 83
 
 endif # DISPLAY
+
+if AUDIO_CODEC
+
+# AW88298 should init after AW9523B
+config AUDIO_CODEC_INIT_PRIORITY
+	default 81
+
+endif # AUDIO_CODEC
 
 endif # BOARD_M5STACK_CORES3_ESP32S3_PROCPU || BOARD_M5STACK_CORES3_ESP32S3_PROCPU_SE

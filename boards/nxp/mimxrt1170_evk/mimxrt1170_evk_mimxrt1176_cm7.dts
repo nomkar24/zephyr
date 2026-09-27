@@ -6,7 +6,7 @@
 
 /dts-v1/;
 
-#include <nxp/imxrt/nxp_rt1170_cm7.dtsi>
+#include <nxp/imxrt/imxrt11xx/nxp_rt1170_cm7.dtsi>
 #include "mimxrt1170_evk.dtsi"
 
 / {
@@ -16,6 +16,7 @@
 	aliases {
 		mipi-dsi = &mipi_dsi;
 		watchdog0 = &wdog1;
+		i2s-codec-tx = &sai1;
 	};
 
 	chosen {
@@ -25,7 +26,7 @@
 		zephyr,console = &lpuart1;
 		zephyr,shell-uart = &lpuart1;
 		zephyr,canbus = &flexcan3;
-		zephyr,flash-controller = &is25wp128;
+		zephyr,flash-controller = &ext_flash_ctrl;
 		zephyr,flash = &is25wp128;
 		zephyr,code-partition = &slot0_partition;
 		zephyr,uart-mcumgr = &lpuart1;
@@ -87,6 +88,7 @@
 	status = "okay";
 };
 
+/* Choose lcdif as default controller. Change to lcdifv2 to switch controller. */
 zephyr_lcdif: &lcdif {};
 
 zephyr_mipi_dsi: &mipi_dsi {
@@ -117,6 +119,7 @@ nxp_mipi_i2c: &lpi2c5 {
 	pinctrl-names = "default";
 	#address-cells = <1>;
 	#size-cells = <0>;
+	status = "okay";
 };
 
 &lpadc1 {
@@ -156,6 +159,10 @@ nxp_mipi_i2c: &lpi2c5 {
 };
 
 &sai1 {
+	mclk-output;
+	nxp,rx-sync-mode;
+	podf = <32>;
+
 	status = "okay";
 };
 

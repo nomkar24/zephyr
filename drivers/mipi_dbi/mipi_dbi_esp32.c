@@ -14,7 +14,7 @@
 #include <zephyr/drivers/mipi_dbi.h>
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
 
-#include <soc/gdma_channel.h>
+#include <hal/gdma_channel.h>
 #include <esp_clk_tree.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
@@ -67,7 +67,7 @@ static const struct mipi_dbi_esp32_device_config *
 mipi_dbi_esp32_get_device_config(const struct mipi_dbi_esp32_config *cfg,
 				 const struct mipi_dbi_config *dbi_cfg)
 {
-	uint16_t index = dbi_cfg->config.slave;
+	uint16_t index = dbi_cfg->config.peripheral;
 
 	if (index >= cfg->num_devices) {
 		LOG_ERR("Invalid device index %d", index);
@@ -86,11 +86,11 @@ static void mipi_dbi_esp32_set_cs(const struct device *dev, const struct mipi_db
 		return;
 	}
 
-	if (dbi_cfg->config.slave >= cfg->num_cs_gpios) {
+	if (dbi_cfg->config.peripheral >= cfg->num_cs_gpios) {
 		return;
 	}
 
-	gpio_pin_set_dt(&cfg->cs_gpios[dbi_cfg->config.slave], active);
+	gpio_pin_set_dt(&cfg->cs_gpios[dbi_cfg->config.peripheral], active);
 }
 
 static int mipi_dbi_esp32_switch_device(const struct device *dev,
@@ -103,18 +103,21 @@ static int mipi_dbi_esp32_switch_device(const struct device *dev,
 	const struct mipi_dbi_esp32_device_config *pcfg;
 	uint32_t pclk_prescale;
 
-	if (curr_dbi_cfg != NULL && curr_dbi_cfg->config.slave == next_dbi_cfg->config.slave) {
+	if (curr_dbi_cfg != NULL &&
+	    curr_dbi_cfg->config.peripheral == next_dbi_cfg->config.peripheral) {
 		return 0; /* Already selected */
 	}
 
 	switch (next_dbi_cfg->mode) {
 	case MIPI_DBI_MODE_6800_BUS_16_BIT:
 	case MIPI_DBI_MODE_8080_BUS_16_BIT:
-		lcd_ll_set_data_width(hal->dev, 16);
+		lcd_ll_set_dma_read_stride(hal->dev, 16);
+		lcd_ll_set_data_wire_width(hal->dev, 16);
 		break;
 	case MIPI_DBI_MODE_6800_BUS_8_BIT:
 	case MIPI_DBI_MODE_8080_BUS_8_BIT:
-		lcd_ll_set_data_width(hal->dev, 8);
+		lcd_ll_set_dma_read_stride(hal->dev, 8);
+		lcd_ll_set_data_wire_width(hal->dev, 8);
 		break;
 	default:
 		LOG_ERR("MIPI DBI mode %u is not supported.", next_dbi_cfg->mode);
@@ -127,7 +130,7 @@ static int mipi_dbi_esp32_switch_device(const struct device *dev,
 	}
 
 	if (pcfg->pclk_freq_hz == 0U) {
-		LOG_ERR("Invalid PCLK frequency for device %u", next_dbi_cfg->config.slave);
+		LOG_ERR("Invalid PCLK frequency for device %u", next_dbi_cfg->config.peripheral);
 		return -EINVAL;
 	}
 
@@ -388,6 +391,8 @@ static int mipi_dbi_esp32_init(const struct device *dev)
 		}
 	}
 
+	lcd_ll_enable_bus_clock(LCD_BUS_ID, true);
+	lcd_ll_reset_register(LCD_BUS_ID);
 	lcd_hal_init(hal, LCD_BUS_ID);
 	lcd_ll_enable_clock(hal->dev, true);
 
@@ -426,7 +431,7 @@ static int mipi_dbi_esp32_init(const struct device *dev)
 	/* Set parameters */
 
 	lcd_ll_enable_rgb_mode(hal->dev, false);
-	lcd_ll_enable_rgb_yuv_convert(hal->dev, false);
+	lcd_ll_enable_color_convert(hal->dev, false);
 	lcd_ll_enable_output_always_on(hal->dev, true);
 
 	return 0;

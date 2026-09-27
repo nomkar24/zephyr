@@ -45,6 +45,30 @@ config OPENTHREAD_SOURCES
 
 endchoice
 
+config OPENTHREAD_RADIO_VENDOR_IMPLEMENTATION
+	bool "Select vendor radio implementation"
+	depends on !NET_L2_OPENTHREAD
+	help
+	  Use a vendor-specific radio platform abstraction layer instead of the
+	  default Zephyr radio.c implementation. When enabled, the build system
+	  will compile the source file specified by
+	  OPENTHREAD_RADIO_VENDOR_IMPLEMENTATION_FILE in place of the standard
+	  OpenThread radio driver, allowing vendors to provide custom PHY-layer
+	  integration.
+
+config OPENTHREAD_RADIO_VENDOR_IMPLEMENTATION_FILE
+	string "Source file containing vendor-specific radio.c implementation"
+	default ""
+	depends on OPENTHREAD_RADIO_VENDOR_IMPLEMENTATION
+	help
+	  Name of the source file providing the vendor-specific OpenThread radio
+	  platform abstraction. This file must be placed in the
+	  modules/openthread/platform/vendor/ directory and implement the
+	  OpenThread radio API (otPlatRadio* plus platformRadioInit and
+	  platformRadioProcess functions).
+	  It will be compiled instead of the default radio.c driver
+	  during the build.
+
 config OPENTHREAD_MANUAL_START
 	bool "Start OpenThread stack manually"
 	help
@@ -181,7 +205,7 @@ if OPENTHREAD_SECURITY_DEFAULT_CONFIG
 
 config OPENTHREAD_CRYPTO_PSA_CONFIG
 	bool
-	default y if OPENTHREAD_CRYPTO_PSA
+	default y
 	imply SECURE_STORAGE if !BUILD_WITH_TFM
 	select PSA_WANT_KEY_TYPE_AES
 	select PSA_WANT_ALG_ECB_NO_PADDING
@@ -210,27 +234,6 @@ config OPENTHREAD_CRYPTO_PSA_CONFIG
 	select PSA_WANT_ALG_HKDF_EXTRACT if OPENTHREAD_TREL
 	select PSA_WANT_ALG_HKDF_EXPAND if OPENTHREAD_TREL
 
-config OPENTHREAD_CRYPTO_LEGACY_MBEDTLS_CONFIG
-	bool
-	default y if !OPENTHREAD_CRYPTO_PSA
-	select MBEDTLS_CIPHER_AES_ENABLED
-	select MBEDTLS_CIPHER_CCM_ENABLED
-	select MBEDTLS_SHA256
-	select MBEDTLS_ENTROPY_C
-	select MBEDTLS_CMAC
-	select MBEDTLS_CIPHER
-	select MBEDTLS_ECJPAKE_C if OPENTHREAD_COMMISSIONER_JOINER
-	select MBEDTLS_ECP_C if OPENTHREAD_COMMISSIONER_JOINER || OPENTHREAD_ECDSA
-	select MBEDTLS_ECP_DP_SECP256R1_ENABLED if OPENTHREAD_COMMISSIONER_JOINER || \
-						   OPENTHREAD_SRP
-	select MBEDTLS_ECDH_C if OPENTHREAD_ECDSA
-	select MBEDTLS_ECDSA_C if OPENTHREAD_ECDSA
-	select MBEDTLS_ECDSA_DETERMINISTIC if OPENTHREAD_ECDSA
-	select MBEDTLS_ECP_NIST_OPTIM if OPENTHREAD_COMMISSIONER_JOINER
-	select MBEDTLS_CTR_DRBG_C if OPENTHREAD_COMMISSIONER_JOINER
-	select MBEDTLS_HMAC_DRBG_C if OPENTHREAD_COMMISSIONER_JOINER || \
-				      OPENTHREAD_SRP
-
 config OPENTHREAD_MBEDTLS_TLS_CONFIG
 	bool
 	default y
@@ -244,6 +247,8 @@ config OPENTHREAD_MBEDTLS_TLS_CONFIG
 	select MBEDTLS_X509_CRT_PARSE_C if OPENTHREAD_ECDSA
 	select MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED if OPENTHREAD_ECDSA
 	select MBEDTLS_PK_WRITE_C if OPENTHREAD_ECDSA
+	select MBEDTLS_ECP_NIST_OPTIM if OPENTHREAD_COMMISSIONER_JOINER || \
+					 OPENTHREAD_ECDSA
 	help
 	  TLS configuration of Mbed TLS.
 
@@ -251,7 +256,7 @@ endif # OPENTHREAD_SECURITY_DEFAULT_CONFIG
 
 config OPENTHREAD_MBEDTLS_LIB_NAME
 	string "mbedtls lib name"
-	default "mbedTLS"
+	default "mbedtls_iface"
 	help
 	  This option allows to specify one or more mbedtls library files to be
 	  linked with OpenThread. Separate multiple values with space " ".
@@ -259,8 +264,7 @@ config OPENTHREAD_MBEDTLS_LIB_NAME
 config OPENTHREAD_COPROCESSOR
 	bool "OpenThread Co-Processor"
 	select OPENTHREAD_MANUAL_START
-	select RING_BUFFER
-	select UART_INTERRUPT_DRIVEN
+	select UART_INTERRUPT_DRIVEN if !OPENTHREAD_COPROCESSOR_UART_ASYNC
 	help
 	  Enable Co-Processor in OpenThread stack.
 
@@ -343,6 +347,13 @@ config OPENTHREAD_PLATFORM_MESSAGE_MANAGEMENT
 	help
 	  The message pool is managed by platform defined logic.
 
+config OPENTHREAD_MESSAGE_POOL_CUSTOM_SECTION
+	bool "Place message pool buffer in a custom linker section"
+	depends on OPENTHREAD_PLATFORM_MESSAGE_MANAGEMENT
+	help
+	  Place the OpenThread message pool buffer in a custom ".ot_msg_pool"
+	  linker section. This allows relocating it to external memory.
+
 config OPENTHREAD_MAX_STATECHANGE_HANDLERS
 	int "The maximum number of state-changed callback handlers"
 	default 2
@@ -424,11 +435,21 @@ config OPENTHREAD_PLATFORM_USEC_TIMER
 	help
 	  Enable microsecond backoff timer implemented in platform.
 
+DT_CHOSEN_ZEPHYR_OPENTHREAD_COUNTER := zephyr,openthread-counter
+
+config OPENTHREAD_ALARM_COUNTER
+	bool
+	default y
+	depends on $(dt_chosen_enabled,$(DT_CHOSEN_ZEPHYR_OPENTHREAD_COUNTER)) && OPENTHREAD_PLATFORM_USEC_TIMER
+	select COUNTER
+	help
+	  Enable counter driver APIs for microsecond precision for timers in alarm implemented in platform.
+
 menu "OpenThread Border Router"
 
 config OPENTHREAD_ZEPHYR_BORDER_ROUTER
 	bool "Adds support for Border Router functionality"
-	select NET_ROUTING
+	select NET_IPV6_FORWARDING
 	help
 	  Enable support for Border Router using Openthread's implementation.
 
@@ -514,6 +535,17 @@ config OPENTHREAD_ZEPHYR_BORDER_ROUTER_IPV4
 	depends on NET_IPV4 && NET_UDP
 	help
 	  This configuration enables IPV4 communication.
+
+config OPENTHREAD_ZEPHYR_BORDER_ROUTER_MDNS_AUTO_NAMING
+	bool "Automatically generate and register the OpenThread mDNS hostname"
+	default y
+	help
+	  When enabled, the OpenThread Border Router automatically generates
+	  and registers a local mDNS hostname on behalf of the application.
+	  Disable this option when the mDNS hostname lifecycle is managed
+	  externally by the application layer (e.g., Matter applications
+	  that assign a device-specific hostname during the commissioning
+	  process).
 
 config OPENTHREAD_ZEPHYR_BORDER_ROUTER_NAT64_TRANSLATOR
 	bool "Border Router NAT64 translator"

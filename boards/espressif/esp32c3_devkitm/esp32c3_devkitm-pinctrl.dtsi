@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/dt-bindings/pinctrl/esp-pinctrl-common.h>
 #include <zephyr/dt-bindings/pinctrl/esp32c3-pinctrl.h>
-#include <zephyr/dt-bindings/pinctrl/esp32c3-gpio-sigmap.h>
 
 &pinctrl {
 	uart0_default: uart0_default {
@@ -18,14 +16,6 @@
 		group2 {
 			pinmux = <UART0_RX_GPIO20>;
 			bias-pull-up;
-		};
-	};
-
-	uart0_sleep: uart0_sleep {
-		group1 {
-			pinmux = <UART0_TX_GPIO21>,
-				 <UART0_RX_GPIO20>;
-			drive-open-drain;
 		};
 	};
 

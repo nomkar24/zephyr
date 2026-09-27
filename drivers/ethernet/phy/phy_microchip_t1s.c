@@ -12,6 +12,8 @@
 #include <zephyr/net/mdio.h>
 #include <zephyr/drivers/mdio.h>
 
+#include "phy_oa_tc14_plca.h"
+
 #define LOG_MODULE_NAME phy_mc_t1s
 #define LOG_LEVEL       CONFIG_PHY_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -445,7 +447,7 @@ static int phy_mc_lan867x_revc_config_init(const struct device *dev)
 
 		/* LAN867x Rev.C1/C2 configuration settings are equal to the first 11 configuration
 		 * settings and all the sqi fixup settings from LAN865x Rev.B0/B1. So the 8
-		 * inbetween configuration settings are skipped.
+		 * in between configuration settings are skipped.
 		 */
 		if (i == 10) {
 			i += 8;
@@ -647,7 +649,11 @@ static DEVICE_API(ethphy, mc_t1s_phy_api) = {
 	static struct mc_t1s_plca_config mc_t1s_plca_##n##_config = {                              \
 		.enable = DT_INST_PROP(n, plca_enable),                                            \
 		.node_id = DT_INST_PROP(n, plca_node_id),                                          \
-		.node_count = DT_INST_PROP(n, plca_node_count),                                    \
+		.node_count = COND_CODE_0(                                                     \
+			DT_INST_PROP(n, plca_node_id),                                           \
+			(DT_INST_PROP(n, plca_node_count)),                                        \
+			(DT_INST_PROP_OR(n, plca_node_count, 0))                                   \
+		),                                                                            \
 		.burst_count = DT_INST_PROP(n, plca_burst_count),                                  \
 		.burst_timer = DT_INST_PROP(n, plca_burst_timer),                                  \
 		.to_timer = DT_INST_PROP(n, plca_to_timer),                                        \

@@ -106,6 +106,10 @@
 	power-supply = "smps-direct";
 };
 
+&cryp {
+	status = "okay";
+};
+
 &usart3 {
 	pinctrl-0 = <&usart3_tx_pd8 &usart3_rx_pd9>;
 	pinctrl-names = "default";
@@ -122,17 +126,23 @@
 &i2c4 {
 	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiof 14 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiof 15 GPIO_ACTIVE_HIGH>;
 };
 
 &rng {
 	status = "okay";
 };
 
+&adc12_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc1_inp0_pa0_c>;
 	pinctrl-names = "default";
-	st,adc-clock-source = "SYNC";
-	st,adc-prescaler = <4>;
 	status = "okay";
 };
 

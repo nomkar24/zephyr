@@ -164,7 +164,7 @@ unlock:
 	return err;
 }
 
-static const struct rtc_driver_api ds1302_driver_api = {
+static DEVICE_API(rtc, ds1302_driver_api) = {
 	.set_time = ds1302_set_time,
 	.get_time = ds1302_get_time,
 };
@@ -202,7 +202,8 @@ unlock:
 	return err;
 }
 
-#define RTC_DS1302_SPI_CFG SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_LSB | SPI_HALF_DUPLEX
+#define RTC_DS1302_SPI_CFG                                                                         \
+	SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) | SPI_TRANSFER_LSB | SPI_HALF_DUPLEX
 
 #define DS1302_DEFINE(inst)                                                                        \
 	static struct ds1302_data ds1302_data_##inst;                                              \

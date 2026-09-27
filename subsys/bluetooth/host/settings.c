@@ -24,6 +24,7 @@
 
 #include "common/bt_settings_commit.h"
 #include "common/bt_str.h"
+#include "classic/br.h"
 #include "hci_core.h"
 #include "settings.h"
 #include "sys/types.h"
@@ -196,7 +197,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 	ssize_t len;
 	const char *next;
 
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_ENABLE)) {
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_OPEN)) {
 		/* The Bluetooth settings loader needs to communicate with the Bluetooth
 		 * controller to setup identities. This will not work before
 		 * bt_enable(). The doc on @ref bt_enable requires the "bt/" settings
@@ -308,7 +309,7 @@ static int commit_settings(void)
 
 	LOG_DBG("");
 
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_ENABLE)) {
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_OPEN)) {
 		/* The Bluetooth settings loader needs to communicate with the Bluetooth
 		 * controller to setup identities. This will not work before
 		 * bt_enable(). The doc on @ref bt_enable requires the "bt/" settings
@@ -320,14 +321,32 @@ static int commit_settings(void)
 
 #if defined(CONFIG_BT_DEVICE_NAME_DYNAMIC)
 	if (bt_dev.name[0] == '\0') {
-		bt_set_name(CONFIG_BT_DEVICE_NAME);
+		/* No name in flash — populate bt_dev.name with the default.
+		 * Skip bt_set_name() to avoid an unnecessary flash write.
+		 */
+		strncpy(bt_dev.name, CONFIG_BT_DEVICE_NAME,
+			CONFIG_BT_DEVICE_NAME_MAX);
+		bt_dev.name[CONFIG_BT_DEVICE_NAME_MAX] = '\0';
+	}
+
+	/* Push the name (restored or default) to all transports.
+	 * For BLE the GAP device name is already handled by the
+	 * advertising / scan-response path; for BR/EDR we must
+	 * issue the HCI Write Local Name command explicitly.
+	 */
+	if (IS_ENABLED(CONFIG_BT_CLASSIC)) {
+		err = bt_br_write_local_name(bt_dev.name);
+		if (err != 0) {
+			LOG_ERR("Unable to set BR/EDR local name (err %d)", err);
+			goto finalize;
+		}
 	}
 #endif
 	if (!bt_dev.id_count) {
 		err = bt_setup_public_id_addr();
 		if (err) {
 			LOG_ERR("Unable to setup an identity address");
-			return err;
+			goto finalize;
 		}
 	}
 
@@ -335,12 +354,8 @@ static int commit_settings(void)
 		err = bt_setup_random_id_addr();
 		if (err) {
 			LOG_ERR("Unable to setup an identity address");
-			return err;
+			goto finalize;
 		}
-	}
-
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
-		bt_finalize_init();
 	}
 
 	/* If any part of the Identity Information of the device has been
@@ -352,7 +367,12 @@ static int commit_settings(void)
 		bt_settings_store_irk();
 	}
 
-	return 0;
+	err = 0;
+
+finalize:
+	bt_finalize_init(err);
+
+	return err;
 }
 
 SETTINGS_STATIC_HANDLER_DEFINE_WITH_CPRIO(bt, "bt", NULL, set_setting, commit_settings, NULL,
@@ -517,7 +537,7 @@ K_WORK_DEFINE(store_id_work, do_store_id);
 
 int bt_settings_store_id(void)
 {
-	k_work_submit(&store_id_work);
+	bt_work_submit(&store_id_work);
 
 	return 0;
 }
@@ -543,7 +563,7 @@ K_WORK_DEFINE(store_irk_work, do_store_irk);
 int bt_settings_store_irk(void)
 {
 #if defined(CONFIG_BT_PRIVACY)
-	k_work_submit(&store_irk_work);
+	bt_work_submit(&store_irk_work);
 #endif /* defined(CONFIG_BT_PRIVACY) */
 	return 0;
 }
@@ -551,6 +571,20 @@ int bt_settings_store_irk(void)
 int bt_settings_delete_irk(void)
 {
 	return bt_settings_delete("irk", 0, NULL);
+}
+
+void bt_settings_flush(void)
+{
+	struct k_work_sync sync;
+
+	/* The store handlers read the identity state that bt_disable() is
+	 * about to reset. Running after the reset they would persist empty or
+	 * torn records, while canceling them would silently lose the latest
+	 * identity update. Complete any pending stores now, while the state
+	 * is still valid.
+	 */
+	(void)k_work_flush(&store_id_work, &sync);
+	(void)k_work_flush(&store_irk_work, &sync);
 }
 
 int bt_settings_store_link_key(const bt_addr_le_t *addr, const void *value, size_t val_len)

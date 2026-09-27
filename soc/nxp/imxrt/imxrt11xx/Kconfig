@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024, 2026 NXP
 # SPDX-License-Identifier: Apache-2.0
 
 config SOC_SERIES_IMXRT11XX
@@ -17,14 +17,26 @@ config SOC_SERIES_IMXRT11XX
 	select HAS_SWO
 	select HAS_PM
 
+config SOC_MIMXRT1151
+	select CPU_CORTEX_M7
+
+config SOC_MIMXRT1152
+	select CPU_CORTEX_M7
+
 config SOC_MIMXRT1176_CM4
 	select CPU_CORTEX_M4
+	select CPU_HAS_ICACHE
+	select CPU_HAS_DCACHE
+	select HAS_MCUX_LMEM_CACHE
 
 config SOC_MIMXRT1176_CM7
 	select CPU_CORTEX_M7
 
 config SOC_MIMXRT1166_CM4
 	select CPU_CORTEX_M4
+	select CPU_HAS_ICACHE
+	select CPU_HAS_DCACHE
+	select HAS_MCUX_LMEM_CACHE
 
 config SOC_MIMXRT1166_CM7
 	select CPU_CORTEX_M7

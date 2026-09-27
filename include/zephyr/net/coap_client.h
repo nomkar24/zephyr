@@ -31,6 +31,8 @@ extern "C" {
 /** Maximum size of a CoAP message */
 #define MAX_COAP_MSG_LEN (CONFIG_COAP_CLIENT_MESSAGE_HEADER_SIZE + \
 			  CONFIG_COAP_CLIENT_MESSAGE_SIZE)
+/** Maximum length in bytes for options specified in @ref coap_client_option */
+#define MAX_COAP_CLIENT_OPTION_LEN (12)
 
 /**
  * @brief Representation for CoAP client response data.
@@ -99,7 +101,7 @@ typedef void (*coap_client_response_cb_t)(const struct coap_client_response_data
  * payload pointer, payload size and information whether more data blocks are expected.
  * Setting the @p last_block parameter to false on the initial callback call triggers
  * a block transfer upload. The library will keep calling the callback until the
- * @p last_block parameter is set to false.
+ * @p last_block parameter is set to true.
  *
  * @note If block transfer is used, the application is expected to provide full blocks of
  * payload. Only the final block (i.e. when @p last_block is set to true) can be shorter
@@ -132,7 +134,7 @@ struct coap_client_option {
 	/** Option len */
 	uint8_t len;
 	/** Buffer for the length */
-	uint8_t value[12];
+	uint8_t value[MAX_COAP_CLIENT_OPTION_LEN];
 #endif
 };
 
@@ -163,7 +165,7 @@ struct coap_client_request {
 	 * request that accepts multiple responses within the timeout period. After the
 	 * timeout, a final callback with source=NULL signals completion, after which
 	 * no further callbacks will be issued. Multicast requests are always
-	 * non-confirmable (RFC 7252).
+	 * non-confirmable (@rfc{7252}).
 	 *
 	 * @kconfig_dep{CONFIG_COAP_CLIENT_MULTICAST}
 	 */
@@ -182,7 +184,10 @@ struct coap_client_internal_request {
 	uint8_t request_tkl;
 	bool request_ongoing;
 	atomic_t in_callback;
+	int unreported_error;
 	struct coap_block_context recv_blk_ctx;
+	uint8_t recv_etag[COAP_ETAG_MAX_LEN];
+	uint8_t recv_etag_len;
 	struct coap_block_context send_blk_ctx;
 	struct coap_pending pending;
 	struct coap_client_request coap_request;
@@ -190,9 +195,16 @@ struct coap_client_internal_request {
 	uint8_t request_tag[COAP_TOKEN_MAX_LEN];
 	uint8_t send_buf[MAX_COAP_MSG_LEN];
 
+	/* A block-wise receive is in progress, so recv_blk_ctx is valid and
+	 * further requests of this exchange are continuation retrievals.
+	 */
+	bool recv_blockwise;
+
 	/* For GETs with observe option set */
 	bool is_observe;
 	int last_response_id;
+	uint8_t observe_token[COAP_TOKEN_MAX_LEN]; /* registration token snapshot */
+	uint8_t observe_tkl;
 #if defined(CONFIG_COAP_CLIENT_MULTICAST)
 	bool is_mcast;
 	k_timepoint_t mcast_timeout;
@@ -277,10 +289,32 @@ void coap_client_cancel_requests(struct coap_client *client);
 void coap_client_cancel_request(struct coap_client *client, struct coap_client_request *req);
 
 /**
+ * @brief Deregister matching CoAP observe subscriptions.
+ *
+ * Sends a GET with Observe option set to 1 (deregister) using the same token as the original
+ * observe request, per @rfc{7641,section-3.6}. The CON/NON type mirrors the original request.
+ *
+ * For Confirmable requests the operation is asynchronous: retransmissions are handled by the
+ * library and the response callback is invoked with the server's final response once the
+ * deregistration is acknowledged.
+ *
+ * For Non-confirmable requests the deregister is sent once and the request is released
+ * immediately; the response callback is invoked with @c -ECANCELED.
+ *
+ * The matching rules are the same as @ref coap_client_cancel_request.
+ *
+ * @param client Pointer to the CoAP client instance.
+ * @param req Pointer to the CoAP client request to match for deregistration.
+ *
+ * @return 0 on success, a negative error code otherwise.
+ */
+int coap_client_deregister_observe(struct coap_client *client, struct coap_client_request *req);
+
+/**
  * @brief Initialise a Block2 option to be added to a request
  *
- * If the application expects a request to require a blockwise transfer, it may pre-emptively
- * suggest a maximum block size to the server - see RFC7959 Figure 3: Block-Wise GET with Early
+ * If the application expects a request to require a blockwise transfer, it may preemptively
+ * suggest a maximum block size to the server - see @rfc{7959} Figure 3: Block-Wise GET with Early
  * Negotiation.
  *
  * This helper function returns a Block2 option to send with the initial request.

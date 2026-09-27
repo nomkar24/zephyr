@@ -19,6 +19,9 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_context.h>
+#if defined(CONFIG_NET_IPV6_IID_STABLE) || defined(CONFIG_NET_IPV6_PE)
+#include <psa/crypto.h>
+#endif
 
 #include "icmpv6.h"
 #include "nbr.h"
@@ -137,6 +140,27 @@ int net_ipv6_send_ns(struct net_if *iface, struct net_pkt *pending,
 
 int net_ipv6_send_rs(struct net_if *iface);
 int net_ipv6_start_rs(struct net_if *iface);
+
+#if defined(CONFIG_NET_IPV6_ND_RA_TX)
+/**
+ * @brief Send an IPv6 Router Advertisement on the given interface.
+ *
+ * @param iface Network interface to send on
+ * @param dst Destination address, or NULL to use the all-nodes multicast
+ *            address (unsolicited advertisement).
+ *
+ * @return 0 on success, negative errno otherwise.
+ */
+int net_ipv6_send_ra(struct net_if *iface, const struct net_in6_addr *dst);
+
+/**
+ * @brief Start or stop the unsolicited Router Advertisement timer depending
+ * on whether any interface currently has the router role enabled.
+ *
+ * Called when the router role of an interface changes.
+ */
+void net_ipv6_ra_update_timer(void);
+#endif
 
 int net_ipv6_send_na(struct net_if *iface, const struct net_in6_addr *src,
 		     const struct net_in6_addr *dst, const struct net_in6_addr *tgt,
@@ -279,10 +303,10 @@ void net_ipv6_nbr_unlock(void);
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
 struct net_nbr *net_ipv6_nbr_lookup(struct net_if *iface,
-				    struct net_in6_addr *addr);
+				    const struct net_in6_addr *addr);
 #else
 static inline struct net_nbr *net_ipv6_nbr_lookup(struct net_if *iface,
-						  struct net_in6_addr *addr)
+						  const struct net_in6_addr *addr)
 {
 	return NULL;
 }
@@ -366,6 +390,27 @@ bool net_ipv6_nbr_rm(struct net_if *iface, struct net_in6_addr *addr);
 static inline bool net_ipv6_nbr_rm(struct net_if *iface, struct net_in6_addr *addr)
 {
 	return true;
+}
+#endif
+
+/**
+ * @brief Remove all non-static IPv6 neighbor cache entries of an interface.
+ *
+ * Called when the interface link goes down so that cached neighbor entries,
+ * whose reachability is no longer valid, are re-resolved once the link is
+ * back. Re-resolution emits a Neighbor Solicitation carrying our link-layer
+ * address, letting peers relearn this node. This is the IPv6 counterpart of
+ * clearing the ARP cache on link down.
+ *
+ * @param iface Network interface, or NULL to clear the cache of every
+ *              interface.
+ */
+#if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
+void net_ipv6_nbr_clear_cache(struct net_if *iface);
+#else
+static inline void net_ipv6_nbr_clear_cache(struct net_if *iface)
+{
+	ARG_UNUSED(iface);
 }
 #endif
 
@@ -507,6 +552,18 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 	return NET_DROP;
 }
 #endif /* CONFIG_NET_IPV6_FRAGMENT */
+
+#if defined(CONFIG_NET_IPV6_IID_STABLE) || defined(CONFIG_NET_IPV6_PE)
+/**
+ * @brief Get the HMAC key used to derive interface identifiers, generating
+ * it on first use.
+ *
+ * @param cached Caller's key id, PSA_KEY_ID_NULL until the key exists.
+ *
+ * @return The key id, or PSA_KEY_ID_NULL if the key could not be generated.
+ */
+psa_key_id_t net_ipv6_iid_key_get(psa_key_id_t *cached);
+#endif /* CONFIG_NET_IPV6_IID_STABLE || CONFIG_NET_IPV6_PE */
 
 #if defined(CONFIG_NET_NATIVE_IPV6)
 void net_ipv6_init(void);

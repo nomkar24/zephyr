@@ -33,6 +33,14 @@ config ZBUS_MSG_SUBSCRIBER
 	bool "Message subscribers will receive all messages in sequence."
 	select NET_BUF
 
+config ZBUS_RUNTIME_CHANNEL_REGISTRATION
+	bool "ZBus channels that are linked to the subsystem at runtime"
+	help
+	  Allow ZBus channels to be created and registered/unregistered at runtime via
+	  zbus_runtime_channel_register()/zbus_runtime_channel_unregister(), in addition to the
+	  channels defined statically with ZBUS_CHAN_DEFINE(). Useful for dynamically loaded
+	  modules (e.g. LLEXT) that wish to create channels at runtime.
+
 if ZBUS_MSG_SUBSCRIBER
 
 choice ZBUS_MSG_SUBSCRIBER_BUF_ALLOC
@@ -122,6 +130,19 @@ config ZBUS_ASSERT_MOCK
 	  enabled, _ZBUS_ASSERT returns -EFAULT instead of assert. It makes it more straightforward to test invalid
 	  parameters.
 
+menuconfig ZBUS_PROXY_AGENT
+	bool "ZBus proxy agent support [EXPERIMENTAL]"
+	select ZBUS_CHANNEL_NAME
+	select EXPERIMENTAL
+	help
+	  Enables support for ZBus proxy agents. This feature allows the ZBus to work with multiple domains,
+	  enabling communication between them using proxy agents.
+
+if ZBUS_PROXY_AGENT
+
+rsource "proxy_agent/Kconfig"
+
+endif # ZBUS_PROXY_AGENT
 
 config HEAP_MEM_POOL_ADD_SIZE_ZBUS
 	int "ZBus requested heap pool size."

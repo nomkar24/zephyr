@@ -1020,6 +1020,78 @@ ZTEST(net_buf_tests, test_net_buf_fixed_append)
 	net_buf_unref(buf);
 }
 
+/* Half of the fixed pool per append, so that a single call spans several
+ * fragments and the second call starts from a chain that already has some.
+ */
+#define APPEND_CHUNK (FIXED_BUFFER_SIZE * 5)
+
+/* Fragment allocator used to build a long chain, counting the allocations. */
+static struct net_buf *fixed_pool_allocator(k_timeout_t timeout, void *user_data)
+{
+	unsigned int *allocations = user_data;
+
+	(*allocations)++;
+
+	return net_buf_alloc(&fixed_pool, timeout);
+}
+
+ZTEST(net_buf_tests, test_net_buf_append_long_chain)
+{
+	static uint8_t data[APPEND_CHUNK];
+	unsigned int allocations = 0;
+	struct net_buf *buf, *frag;
+	size_t frags = 0;
+	size_t written;
+
+	destroy_called = 0;
+
+	/* Vary the pattern per fragment so that a reordered chain cannot
+	 * still match the source payload.
+	 */
+	for (size_t i = 0; i < sizeof(data); i++) {
+		data[i] = (uint8_t)(i + (i / FIXED_BUFFER_SIZE));
+	}
+
+	buf = net_buf_alloc(&fixed_pool, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get fixed buffer");
+
+	written = net_buf_append_bytes(buf, sizeof(data), data, K_NO_WAIT, fixed_pool_allocator,
+				       &allocations);
+	zassert_equal(written, sizeof(data), "Incomplete first append");
+	zassert_equal(allocations, 4, "Unexpected fragment allocation count");
+
+	written = net_buf_append_bytes(buf, sizeof(data), data, K_NO_WAIT, fixed_pool_allocator,
+				       &allocations);
+	zassert_equal(written, sizeof(data), "Incomplete second append");
+	zassert_equal(allocations, 9, "Unexpected fragment allocation count");
+
+	/* Every fragment must be filled and linked exactly once. */
+	for (frag = buf; frag != NULL; frag = frag->frags) {
+		zassert_equal(frag->len, FIXED_BUFFER_SIZE, "Fragment not filled");
+		frags++;
+	}
+	zassert_equal(frags, 10, "Unexpected fragment count");
+	zassert_equal(net_buf_frags_len(buf), APPEND_CHUNK * 2, "Unexpected chain length");
+
+	/* Both appends must be readable back in order, including across the
+	 * fragment that joins them.
+	 */
+	zassert_equal(net_buf_data_match(buf, 0, data, sizeof(data)), sizeof(data),
+		      "First append is out of order");
+	zassert_equal(net_buf_data_match(buf, sizeof(data), data, sizeof(data)), sizeof(data),
+		      "Second append is out of order");
+
+	/* The pool is now empty: a failed allocation must leave the chain as
+	 * it is.
+	 */
+	written = net_buf_append_bytes(buf, 1, data, K_NO_WAIT, fixed_pool_allocator, &allocations);
+	zassert_equal(written, 0, "Appended to an exhausted pool");
+	zassert_equal(net_buf_frags_len(buf), APPEND_CHUNK * 2, "Chain changed on failed append");
+
+	net_buf_unref(buf);
+	zassert_equal(destroy_called, 10, "Incorrect destroy callback count");
+}
+
 ZTEST(net_buf_tests, test_net_buf_linearize)
 {
 	struct net_buf *buf, *frag;
@@ -1161,6 +1233,104 @@ ZTEST(net_buf_tests, test_net_buf_var_pool_aligned)
 	net_buf_unref(buf3);
 
 	zassert_equal(destroy_called, 3, "Incorrect destroy callback count");
+}
+
+ZTEST(net_buf_tests, test_net_buf_take)
+{
+	struct net_buf *buf, *moved;
+
+	destroy_called = 0;
+
+	buf = net_buf_alloc_len(&bufs_pool, 74, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+	zassert_equal(buf->ref, 1, "Unexpected ref count");
+
+	/* Buf should become NULL, moved should hold the buffer */
+	moved = net_buf_take(&buf);
+	zassert_is_null(buf, "Original pointer not NULLed after move");
+	zassert_not_null(moved, "Moved pointer should not be NULL");
+	zassert_equal(moved->ref, 1, "Ref count should remain 1 after move");
+
+	net_buf_unref(moved);
+
+	zassert_equal(destroy_called, 1, "Incorrect destroy callback count");
+
+	/* Move a buffer that has multiple references (ref > 1) */
+	destroy_called = 0;
+	buf = net_buf_alloc_len(&bufs_pool, 74, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+	zassert_not_null(net_buf_ref(buf), "Failed to reference buffer");
+	zassert_equal(buf->ref, 2, "Unexpected ref count");
+
+	moved = net_buf_take(&buf);
+	zassert_is_null(buf, "Original pointer not NULLed after move");
+	zassert_not_null(moved, "Moved pointer should not be NULL");
+	zassert_equal(moved->ref, 2, "Ref count should remain 2 after move");
+
+	net_buf_unref(moved);
+	zassert_equal(destroy_called, 0, "Buffer should not be destroyed yet");
+	net_buf_unref(moved);
+	zassert_equal(destroy_called, 1, "Buffer should be destroyed now");
+}
+
+ZTEST(net_buf_tests, test_net_buf_drop)
+{
+	struct net_buf *buf, *new_ref;
+
+	destroy_called = 0;
+
+	buf = net_buf_alloc_len(&bufs_pool, 74, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+	zassert_equal(buf->ref, 1, "Unexpected ref count");
+
+	net_buf_drop(&buf);
+	zassert_is_null(buf, "Pointer not NULLed after drop");
+	zassert_equal(destroy_called, 1, "Incorrect destroy callback count");
+
+	destroy_called = 0;
+	buf = net_buf_alloc_len(&bufs_pool, 74, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+	zassert_equal(buf->ref, 1, "Unexpected ref count");
+
+	new_ref = net_buf_ref(buf);
+	zassert_equal(new_ref->ref, 2, "Unexpected ref count");
+	net_buf_drop(&new_ref);
+	zassert_is_null(new_ref, "Pointer not NULLed after drop");
+	zassert_equal(destroy_called, 0, "Incorrect destroy callback count");
+	zassert_equal(buf->ref, 1, "Unexpected ref count");
+
+	net_buf_drop(&buf);
+	zassert_is_null(buf, "Original pointer not NULLed after drop");
+	zassert_equal(destroy_called, 1, "Incorrect destroy callback count");
+}
+
+ZTEST(net_buf_tests, test_net_buf_is_valid)
+{
+	struct net_buf *buf;
+
+	destroy_called = 0;
+
+	zassert_false(net_buf_is_valid(NULL), "NULL buffer reported valid");
+
+	buf = net_buf_alloc_len(&bufs_pool, 74, K_NO_WAIT);
+	zassert_not_null(buf, "Failed to get buffer");
+	zassert_true(net_buf_is_valid(buf), "Freshly allocated buffer not valid");
+
+	/* A zero reference count means the buffer has been handed back to
+	 * its pool and must no longer be considered valid.
+	 */
+	buf->ref = 0U;
+	zassert_false(net_buf_is_valid(buf), "Unreferenced buffer reported valid");
+	buf->ref = 1U;
+
+	/* Metadata corruption is caught via net_buf_simple_is_valid() */
+	buf->len = buf->size + 1U;
+	zassert_false(net_buf_is_valid(buf), "Corrupted buffer reported valid");
+	buf->len = 0U;
+	zassert_true(net_buf_is_valid(buf), "Restored buffer not valid");
+
+	net_buf_unref(buf);
+	zassert_equal(destroy_called, 1, "Incorrect destroy callback count");
 }
 
 ZTEST_SUITE(net_buf_tests, NULL, NULL, NULL, NULL, NULL);

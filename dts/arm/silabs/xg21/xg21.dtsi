@@ -18,6 +18,7 @@
 / {
 	chosen {
 		silabs,sleeptimer = &rtcc0;
+		zephyr,crc = &gpcrc;
 		zephyr,entropy = &se;
 		zephyr,flash-controller = &msc;
 	};
@@ -39,6 +40,13 @@
 			compatible = "fixed-factor-clock";
 			#clock-cells = <0>;
 			clocks = <&lfrco>;
+		};
+
+		exportclk: exportclk {
+			compatible = "fixed-factor-clock";
+			#clock-cells = <0>;
+			clock-div = <1>;
+			clocks = <&sysclk>;
 		};
 
 		hclk: hclk {
@@ -177,6 +185,29 @@
 			interrupt-names = "cmu";
 			interrupts = <48 2>;
 			status = "okay";
+
+			clkout: clkout {
+				compatible = "silabs,series-clock-output";
+				#address-cells = <1>;
+				#clock-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+
+				clkout0: clock-output@0 {
+					reg = <0>;
+					status = "disabled";
+				};
+
+				clkout1: clock-output@1 {
+					reg = <1>;
+					status = "disabled";
+				};
+
+				clkout2: clock-output@2 {
+					reg = <2>;
+					status = "disabled";
+				};
+			};
 		};
 
 		clk_hfxo: hfxo: hfxo@5000c000 {
@@ -241,6 +272,7 @@
 		msc: flash-controller@50030000 {
 			compatible = "silabs,series2-flash-controller";
 			reg = <0x50030000 0x4000>;
+			ranges;
 			#address-cells = <1>;
 			#size-cells = <1>;
 			clocks = <&cmu CLOCK_AUTO CLOCK_BRANCH_HCLK>;
@@ -249,6 +281,8 @@
 
 			flash0: flash@0 {
 				compatible = "soc-nv-flash";
+				#address-cells = <1>;
+				#size-cells = <1>;
 				erase-block-size = <8192>;
 				write-block-size = <4>;
 			};
@@ -322,7 +356,9 @@
 			compatible = "silabs,ldma";
 			reg = <0x50040000 0x4000>;
 			#dma-cells = <1>;
-			clocks = <&cmu CLOCK_AUTO CLOCK_BRANCH_HCLK>;
+			clock-names = "ldma", "xbar";
+			clocks = <&cmu CLOCK_AUTO CLOCK_BRANCH_HCLK>,
+				 <&cmu CLOCK_AUTO CLOCK_BRANCH_PCLK>;
 			dma-channels = <8>;
 			interrupt-names = "ldma";
 			interrupts = <21 2>;
@@ -469,6 +505,13 @@
 			compatible = "silabs,buram";
 			reg = <0x50080000 0x80>;
 			status = "disabled";
+		};
+
+		gpcrc: gpcrc@50088000 {
+			compatible = "silabs,gpcrc";
+			reg = <0x50088000 0x4000>;
+			clocks = <&cmu CLOCK_AUTO CLOCK_BRANCH_HCLK>;
+			status = "okay";
 		};
 
 		rtcc0: rtcc@58000000 {

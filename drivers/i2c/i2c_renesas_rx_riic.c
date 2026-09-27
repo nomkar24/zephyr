@@ -20,7 +20,18 @@
 #include <zephyr/drivers/misc/renesas_rx_dtc/renesas_rx_dtc.h>
 #endif /* CONFIG_RENESAS_RX_I2C_DTC */
 
+#if defined(CONFIG_RENESAS_RX_GRP_INTC)
+#include <zephyr/drivers/interrupt_controller/intc_renesas_rx_grp_int.h>
+#endif /* CONFIG_RENESAS_RX_GRP_INTC */
+
 LOG_MODULE_REGISTER(i2c_renesas_rx, CONFIG_I2C_LOG_LEVEL);
+
+#if defined(CONFIG_RENESAS_RX_GRP_INTC)
+#define _RIIC_INT_EEI_SRC(chan) BSP_INT_SRC_BL1_RIIC##chan##_EEI##chan
+#define RIIC_INT_EEI_SRC(chan)  _RIIC_INT_EEI_SRC(chan)
+#define _RIIC_INT_TEI_SRC(chan) BSP_INT_SRC_BL1_RIIC##chan##_TEI##chan
+#define RIIC_INT_TEI_SRC(chan)  _RIIC_INT_TEI_SRC(chan)
+#endif /* CONFIG_RENESAS_RX_GRP_INTC */
 
 struct i2c_rx_config {
 	const struct pinctrl_dev_config *pcfg;
@@ -55,9 +66,19 @@ struct i2c_rx_data {
 
 	/* Msgs to send and receive */
 	struct i2c_msg *msgs;
-	uint8_t slv_addr;
+	uint8_t target_addr;
 	uint8_t num_msgs;
 	uint8_t num_processed_msgs;
+#endif
+#ifdef CONFIG_RENESAS_RX_GRP_INTC
+	/*  Group interrupt controller, TEI and EEI are using the same */
+	const struct device *tei_eei_ctrl;
+	/* TEI and EEI numbers */
+	uint8_t tei_num;
+	uint8_t eei_num;
+	/* Interrupt sources */
+	bsp_int_src_t tei_src;
+	bsp_int_src_t eei_src;
 #endif
 };
 
@@ -179,7 +200,7 @@ static void riic_eei_isr(const struct device *dev)
 
 		static uint8_t first_byte;
 
-		first_byte = data->slv_addr << 1;
+		first_byte = data->target_addr << 1;
 		if ((data->msgs[data->num_processed_msgs].flags & I2C_MSG_RW_MASK) ==
 		    I2C_MSG_WRITE) {
 			first_byte &= W_CODE;
@@ -410,6 +431,77 @@ static void riic_tei_isr(const struct device *dev)
 #endif
 }
 
+#if defined(CONFIG_RENESAS_RX_GRP_INTC)
+static void rx_i2c_eei_grp_isr(bsp_int_cb_args_t *p_args)
+{
+	struct device *riic_dev = (struct device *)(p_args->p_context);
+
+	riic_eei_isr(riic_dev);
+}
+
+static void rx_i2c_tei_grp_isr(bsp_int_cb_args_t *p_args)
+{
+	struct device *riic_dev = (struct device *)(p_args->p_context);
+
+	riic_tei_isr(riic_dev);
+}
+static inline int rx_i2c_eei_grp_int_init(const struct device *dev)
+{
+	struct i2c_rx_data *data = dev->data;
+	int err;
+
+	err = rx_grp_intc_set_callback(data->tei_eei_ctrl, (bsp_int_src_t)data->eei_src,
+				       (bsp_int_cb_t)rx_i2c_eei_grp_isr, (void *)dev);
+
+	if (err != 0) {
+		LOG_ERR("Failed to set callback for group interrupt EEI: %d", err);
+		return err;
+	}
+
+	err = rx_grp_intc_set_gen(data->tei_eei_ctrl, data->eei_num, true);
+	if (err != 0) {
+		LOG_ERR("Failed to allow interrupt request for EEI: %d", err);
+		return err;
+	}
+
+	err = rx_grp_intc_set_grp_int(data->tei_eei_ctrl, (bsp_int_src_t)data->eei_src, true);
+	if (err != 0) {
+		LOG_ERR("Failed to enable group interrupt for EEI: %d", err);
+		return err;
+	}
+
+	return 0;
+}
+
+static inline int rx_i2c_tei_grp_int_init(const struct device *dev)
+{
+	struct i2c_rx_data *data = dev->data;
+	int err;
+
+	err = rx_grp_intc_set_callback(data->tei_eei_ctrl, (bsp_int_src_t)data->tei_src,
+				       (bsp_int_cb_t)rx_i2c_tei_grp_isr, (void *)dev);
+
+	if (err != 0) {
+		LOG_ERR("Failed to set callback for group interrupt TEI: %d", err);
+		return err;
+	}
+
+	err = rx_grp_intc_set_gen(data->tei_eei_ctrl, data->tei_num, true);
+	if (err != 0) {
+		LOG_ERR("Failed to allow interrupt request for TEI: %d", err);
+		return err;
+	}
+
+	err = rx_grp_intc_set_grp_int(data->tei_eei_ctrl, (bsp_int_src_t)data->tei_src, true);
+	if (err != 0) {
+		LOG_ERR("Failed to enable group interrupt for TEI: %d", err);
+		return err;
+	}
+
+	return 0;
+}
+#endif
+
 static void rdp_callback(void)
 {
 	/* Do nothing */
@@ -446,7 +538,7 @@ static int run_rx_transfer(const struct device *dev, struct i2c_msg *msgs, uint8
 	while (data->p_regs->ICCR2.BIT.BBSY == 1) {
 	}
 	/** Store msgs info */
-	data->slv_addr = addr;
+	data->target_addr = addr;
 	data->msgs = msgs;
 	data->num_msgs = num_msgs;
 	data->num_processed_msgs = 0;
@@ -463,7 +555,7 @@ static int run_rx_transfer(const struct device *dev, struct i2c_msg *msgs, uint8
 #else
 	if (addr == 0x00) {
 		/* Enter transmission pattern 4 */
-		LOG_DBG("RDP RX I2C master transmit pattern 4\n");
+		LOG_DBG("RDP RX I2C controller transmit pattern 4\n");
 		setup_rdp_info(data, NULL, 0, NULL, 0, NULL);
 		rdp_ret = R_RIIC_MasterSend(&data->rdp_info);
 		goto transfer_blocking;
@@ -471,14 +563,14 @@ static int run_rx_transfer(const struct device *dev, struct i2c_msg *msgs, uint8
 
 	if (num_msgs == 1) {
 		if (msgs[0].flags & I2C_MSG_READ) {
-			/* Enter master reception pattern 1 */
-			LOG_DBG("RDP RX I2C master reception pattern 1\n");
+			/* Enter controller reception pattern 1 */
+			LOG_DBG("RDP RX I2C controller reception pattern 1\n");
 			setup_rdp_info(data, NULL, 0, msgs[0].buf, msgs[0].len, &addr);
 			rdp_ret = R_RIIC_MasterReceive(&data->rdp_info);
 			goto transfer_blocking;
 		} else {
-			/* Enter master transmission pattern 2/3 */
-			LOG_DBG("RDP RX I2C master transmit pattern 2/3\n");
+			/* Enter controller transmission pattern 2/3 */
+			LOG_DBG("RDP RX I2C controller transmit pattern 2/3\n");
 			setup_rdp_info(data, NULL, 0, msgs[0].len ? msgs[0].buf : NULL, msgs[0].len,
 				       &addr);
 			rdp_ret = R_RIIC_MasterSend(&data->rdp_info);
@@ -490,15 +582,15 @@ static int run_rx_transfer(const struct device *dev, struct i2c_msg *msgs, uint8
 		}
 
 		if (msgs[1].flags & I2C_MSG_READ) {
-			/* Enter master reception pattern 2 */
-			LOG_DBG("RDP RX I2C master reception pattern 2\n");
+			/* Enter controller reception pattern 2 */
+			LOG_DBG("RDP RX I2C controller reception pattern 2\n");
 			setup_rdp_info(data, msgs[0].buf, msgs[0].len, msgs[1].buf, msgs[1].len,
 				       &addr);
 			rdp_ret = R_RIIC_MasterReceive(&data->rdp_info);
 			goto transfer_blocking;
 		} else {
-			/* Enter master transmission pattern 1 */
-			LOG_DBG("RDP RX I2C master transmit pattern 1\n");
+			/* Enter controller transmission pattern 1 */
+			LOG_DBG("RDP RX I2C controller transmit pattern 1\n");
 			setup_rdp_info(data, msgs[0].buf, msgs[0].len, msgs[1].buf, msgs[1].len,
 				       &addr);
 			rdp_ret = R_RIIC_MasterSend(&data->rdp_info);
@@ -507,17 +599,17 @@ static int run_rx_transfer(const struct device *dev, struct i2c_msg *msgs, uint8
 	}
 
 unsupport_pattern:
-	/* Unsupport pattern, emit each fragment as a distinct transaction  */
+	/* Unsupported pattern, emit each fragment as a distinct transaction  */
 	LOG_DBG("%s: \"Not a generic pattern ...\" !\n", __func__);
 	for (uint8_t i = 0; i < num_msgs; i++) {
 		if (msgs[i].flags & I2C_MSG_READ) {
-			/* Enter master reception pattern 1 */
-			LOG_DBG("RDP RX I2C master reception pattern 1\n");
+			/* Enter controller reception pattern 1 */
+			LOG_DBG("RDP RX I2C controller reception pattern 1\n");
 			setup_rdp_info(data, NULL, 0, msgs[i].buf, msgs[i].len, &addr);
 			rdp_ret = R_RIIC_MasterReceive(&data->rdp_info);
 		} else {
-			/* Enter master transmission pattern 2 */
-			LOG_DBG("RDP RX I2C master transmit pattern 2/3\n");
+			/* Enter controller transmission pattern 2 */
+			LOG_DBG("RDP RX I2C controller transmit pattern 2/3\n");
 			setup_rdp_info(data, NULL, 0, (msgs[i].len) ? msgs[i].buf : NULL,
 				       msgs[i].len, &addr);
 			rdp_ret = R_RIIC_MasterSend(&data->rdp_info);
@@ -564,7 +656,7 @@ static int i2c_rx_init(const struct device *dev)
 		return ret;
 	}
 
-	/* Init kernal object */
+	/* Init kernel object */
 	k_sem_init(&data->bus_lock, 1, 1);
 	k_sem_init(&data->bus_sync, 0, 1);
 
@@ -572,7 +664,7 @@ static int i2c_rx_init(const struct device *dev)
 	ret = R_RIIC_Open(&data->rdp_info);
 
 	if (ret) {
-		LOG_ERR("Open i2c master failed.");
+		LOG_ERR("Open i2c controller failed.");
 		return -EIO;
 	}
 
@@ -590,7 +682,7 @@ static int i2c_rx_configure(const struct device *dev, uint32_t dev_config)
 
 	/* Validate input */
 	if (!(dev_config & I2C_MODE_CONTROLLER)) {
-		LOG_ERR("Only I2C Master mode supported.");
+		LOG_ERR("Only I2C Controller mode supported.");
 		return -ENOTSUP;
 	}
 	if (dev_config & I2C_ADDR_10_BITS) {
@@ -691,6 +783,49 @@ static DEVICE_API(i2c, i2c_rx_driver_api) = {
 #endif
 };
 
+#ifdef CONFIG_RENESAS_RX_GRP_INTC
+#define RX_I2C_CONFIG_INIT(index)                                                                  \
+	.tei_eei_ctrl = DEVICE_DT_GET(DT_IRQ_INTC_BY_NAME(DT_DRV_INST(index), tei)),               \
+	.tei_src = RIIC_INT_TEI_SRC(DT_INST_PROP(index, channel)),                                 \
+	.eei_src = RIIC_INT_EEI_SRC(DT_INST_PROP(index, channel)),                                 \
+	.tei_num = DT_INST_IRQ_BY_NAME(index, tei, irq),                                           \
+	.eei_num = DT_INST_IRQ_BY_NAME(index, eei, irq),
+#else
+#define RX_I2C_CONFIG_INIT(index)
+#endif
+
+#ifndef CONFIG_RENESAS_RX_GRP_INTC
+#define RX_I2C_IRQ_CONFIG_INIT(index)                                                              \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, eei, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, eei, priority), riic_eei_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, rxi, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, rxi, priority), riic_rxi_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, txi, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, txi, priority), riic_txi_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, tei, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, tei, priority), riic_tei_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, eei, irq));                                          \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, rxi, irq));                                          \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, txi, irq));                                          \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, tei, irq))
+#else
+#define RX_I2C_IRQ_CONFIG_INIT(index)                                                              \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, rxi, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, rxi, priority), riic_rxi_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, txi, irq),                                          \
+		    DT_INST_IRQ_BY_NAME(index, txi, priority), riic_txi_isr,                       \
+		    DEVICE_DT_INST_GET(index), 0);                                                 \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, rxi, irq));                                          \
+	irq_enable(DT_INST_IRQ_BY_NAME(index, txi, irq));                                          \
+	rx_i2c_tei_grp_int_init(DEVICE_DT_INST_GET(index));                                        \
+	rx_i2c_eei_grp_int_init(DEVICE_DT_INST_GET(index))
+#endif
+
 /* clang-format off */
 #ifdef CONFIG_RENESAS_RX_I2C_DTC
 #define DTC_DATA_STRUCT_INIT(n)                                                                    \
@@ -727,7 +862,7 @@ static DEVICE_API(i2c, i2c_rx_driver_api) = {
 			.num_blocks = 0,                                                           \
 			.length = 0,                                                               \
 	},                                                                                         \
-	.slv_addr = 0x00,                                                                          \
+	.target_addr = 0x00,                                                                       \
 	.msgs = NULL,                                                                              \
 	.num_msgs = 0,                                                                             \
 	.num_processed_msgs = 0,
@@ -742,24 +877,7 @@ static DEVICE_API(i2c, i2c_rx_driver_api) = {
                                                                                                    \
 	static void i2c_rx_irq_config_func##index(const struct device *dev)                        \
 	{                                                                                          \
-                                                                                                   \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, eei, irq),                                  \
-			    DT_INST_IRQ_BY_NAME(index, eei, priority), riic_eei_isr,               \
-			    DEVICE_DT_INST_GET(index), 0);                                         \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, rxi, irq),                                  \
-			    DT_INST_IRQ_BY_NAME(index, rxi, priority), riic_rxi_isr,               \
-			    DEVICE_DT_INST_GET(index), 0);                                         \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, txi, irq),                                  \
-			    DT_INST_IRQ_BY_NAME(index, txi, priority), riic_txi_isr,               \
-			    DEVICE_DT_INST_GET(index), 0);                                         \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(index, tei, irq),                                  \
-			    DT_INST_IRQ_BY_NAME(index, tei, priority), riic_tei_isr,               \
-			    DEVICE_DT_INST_GET(index), 0);                                         \
-                                                                                                   \
-		irq_enable(DT_INST_IRQ_BY_NAME(index, eei, irq));                                  \
-		irq_enable(DT_INST_IRQ_BY_NAME(index, rxi, irq));                                  \
-		irq_enable(DT_INST_IRQ_BY_NAME(index, txi, irq));                                  \
-		irq_enable(DT_INST_IRQ_BY_NAME(index, tei, irq));                                  \
+		RX_I2C_IRQ_CONFIG_INIT(index);                                                     \
 	};                                                                                         \
                                                                                                    \
 	static const struct i2c_rx_config i2c_rx_config_##index = {                                \
@@ -779,7 +897,7 @@ static DEVICE_API(i2c, i2c_rx_driver_api) = {
 				.ch_no = DT_INST_PROP(index, channel),                             \
 				.callbackfunc = rdp_callback,                                      \
 			},                                                                         \
-		DTC_DATA_STRUCT_INIT(index)};                                                      \
+		DTC_DATA_STRUCT_INIT(index) RX_I2C_CONFIG_INIT(index)};                            \
                                                                                                    \
 	I2C_DEVICE_DT_INST_DEFINE(index, i2c_rx_init, NULL, &i2c_rx_data_##index,                  \
 				  &i2c_rx_config_##index, POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,   \

@@ -6,7 +6,9 @@
 #ifndef ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_STM32L5_CLOCK_H_
 #define ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_STM32L5_CLOCK_H_
 
-#include "stm32_common_clocks.h"
+#include <zephyr/dt-bindings/clock/stm32_common_clocks.h>
+
+/** @cond INTERNAL_HIDDEN */
 
 /** Bus clocks */
 #define STM32_CLOCK_BUS_AHB1    0x048
@@ -38,14 +40,15 @@
 #define STM32_SRC_PLL_Q		(STM32_SRC_PLL_P + 1)
 #define STM32_SRC_PLL_R		(STM32_SRC_PLL_Q + 1)
 /* PLLSAI1 clocks */
+/** PLLSAI1 P output, can be selected for SAI, FDCAN and DFSDM peripherals */
 #define STM32_SRC_PLLSAI1_P	(STM32_SRC_PLL_R + 1)
+/** PLLSAI1 Q output, 48MHz clock which can be selected for USB / RNG */
 #define STM32_SRC_PLLSAI1_Q	(STM32_SRC_PLLSAI1_P + 1)
+/** PLLSAI2 R output, can be selected for ADC peripheral */
 #define STM32_SRC_PLLSAI1_R	(STM32_SRC_PLLSAI1_Q + 1)
 /* PLLSAI2 clocks */
+/** PLLSAI2 P output, can be selected for SAI and DFSDM peripherals */
 #define STM32_SRC_PLLSAI2_P	(STM32_SRC_PLLSAI1_R + 1)
-#define STM32_SRC_PLLSAI2_Q	(STM32_SRC_PLLSAI2_P + 1)
-#define STM32_SRC_PLLSAI2_R	(STM32_SRC_PLLSAI2_Q + 1)
-#define STM32_SRC_PLLSAI2_DIVR	(STM32_SRC_PLLSAI2_R + 1)
 
 /** @brief RCC_CCIPR register offset */
 #define CCIPR_REG		0x88
@@ -88,5 +91,7 @@
 /** CFGR devices */
 #define MCO1_SEL(val)           STM32_DT_CLOCK_SELECT((val), 27, 24, CFGR_REG)
 #define MCO1_PRE(val)           STM32_DT_CLOCK_SELECT((val), 30, 28, CFGR_REG)
+
+/** @endcond */
 
 #endif /* ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_STM32L5_CLOCK_H_ */

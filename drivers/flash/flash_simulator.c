@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include <zephyr/drivers/flash/flash_simulator.h>
+#include "flash_priv.h"
 
 #ifdef CONFIG_ARCH_POSIX
 
@@ -403,6 +404,18 @@ flash_sim_get_parameters(const struct device *dev)
 	return cfg->flash_parameters;
 }
 
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+int flash_sim_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(code);
+	ARG_UNUSED(in);
+	ARG_UNUSED(out);
+
+	return -ENOTSUP;
+}
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
+
 static DEVICE_API(flash, flash_sim_api) = {
 	.read = flash_sim_read,
 	.write = flash_sim_write,
@@ -412,6 +425,9 @@ static DEVICE_API(flash, flash_sim_api) = {
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_sim_page_layout,
 #endif
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+	.ex_op = flash_sim_ex_op,
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
 };
 
 #ifdef CONFIG_ARCH_POSIX
@@ -535,12 +551,10 @@ const struct flash_simulator_params *z_vrfy_flash_simulator_get_params(const str
 
 #endif /* CONFIG_USERSPACE */
 
-#define SOC_NV_FLASH_COMPAT(n)         COND_CODE_1(DT_NODE_HAS_COMPAT(n, soc_nv_flash), (n), ())
-#define SOC_NV_FLASH_NODE(n)           DT_INST_FOREACH_CHILD_STATUS_OKAY(n, SOC_NV_FLASH_COMPAT)
-#define FLASH_SIMULATOR_BASE_OFFSET(n) DT_REG_ADDR(SOC_NV_FLASH_NODE(n))
-#define FLASH_SIMULATOR_ERASE_UNIT(n)  DT_PROP(SOC_NV_FLASH_NODE(n), erase_block_size)
-#define FLASH_SIMULATOR_PROG_UNIT(n)   DT_PROP(SOC_NV_FLASH_NODE(n), write_block_size)
-#define FLASH_SIMULATOR_FLASH_SIZE(n)  DT_REG_SIZE(SOC_NV_FLASH_NODE(n))
+#define FLASH_SIMULATOR_BASE_OFFSET(n) DT_REG_ADDR(SOC_NV_FLASH_CHILD_NODE(n))
+#define FLASH_SIMULATOR_ERASE_UNIT(n)  DT_PROP(SOC_NV_FLASH_CHILD_NODE(n), erase_block_size)
+#define FLASH_SIMULATOR_PROG_UNIT(n)   DT_PROP(SOC_NV_FLASH_CHILD_NODE(n), write_block_size)
+#define FLASH_SIMULATOR_FLASH_SIZE(n)  DT_REG_SIZE(SOC_NV_FLASH_CHILD_NODE(n))
 #define FLASH_SIMULATOR_ERASE_VALUE(n) DT_INST_PROP(n, erase_value)
 #define FLASH_SIMULATOR_PAGE_COUNT(n)                                                              \
 	(FLASH_SIMULATOR_FLASH_SIZE(n) / FLASH_SIMULATOR_ERASE_UNIT(n))
@@ -555,7 +569,8 @@ const struct flash_simulator_params *z_vrfy_flash_simulator_get_params(const str
 
 #define MOCK_FLASH_SECTION(n)                                                                      \
 	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, memory_region),                                       \
-	(Z_GENERIC_SECTION(LINKER_DT_NODE_REGION_NAME(DT_INST_PHANDLE(n, memory_region)))), ())
+	(Z_GENERIC_SECTION(LINKER_DT_NODE_REGION_NAME_TOKEN(DT_INST_PHANDLE(n,			   \
+									    memory_region)))), ())
 
 #define FLASH_SIMULATOR_INIT(n)                                                                    \
 	IF_DISABLED(CONFIG_ARCH_POSIX, (                                                           \
@@ -672,7 +687,7 @@ static void flash_native_cleanup(void)
 	},
 
 #define FLASH_SIMULATOR_COMMAND_LINE_OPTS(n)                                                       \
-	FLASH_SIMULATOR_INSTANCE_COMMAND_LINE_OPTS(n, DEVICE_DT_NAME(SOC_NV_FLASH_NODE(n)))
+	FLASH_SIMULATOR_INSTANCE_COMMAND_LINE_OPTS(n, DEVICE_DT_NAME(SOC_NV_FLASH_CHILD_NODE(n)))
 
 static void flash_native_options(void)
 {

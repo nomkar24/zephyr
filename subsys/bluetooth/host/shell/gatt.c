@@ -27,7 +27,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/time_units.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/sys/util.h>
 #include <sys/types.h>
 
@@ -674,19 +674,19 @@ static int cmd_resubscribe(const struct shell *sh, size_t argc,
 		return -ENOEXEC;
 	}
 
-	err = bt_addr_le_from_str(argv[1], argv[2], &addr);
+	err = bt_addr_le_from_str(argv[1], &addr);
 	if (err) {
 		shell_error(sh, "Invalid peer address (err %d)", err);
 		return -ENOEXEC;
 	}
 
-	subscribe_params.ccc_handle = strtoul(argv[3], NULL, 16);
-	subscribe_params.value_handle = strtoul(argv[4], NULL, 16);
+	subscribe_params.ccc_handle = strtoul(argv[2], NULL, 16);
+	subscribe_params.value_handle = strtoul(argv[3], NULL, 16);
 	subscribe_params.value = BT_GATT_CCC_NOTIFY;
 	subscribe_params.notify = notify_func;
 	SET_CHAN_OPT_ANY(subscribe_params);
 
-	if (argc > 5 && !strcmp(argv[5], "ind")) {
+	if (argc > 4 && !strcmp(argv[4], "ind")) {
 		subscribe_params.value = BT_GATT_CCC_INDICATE;
 	}
 
@@ -820,7 +820,8 @@ static const struct bt_uuid_128 vnd_long_uuid1 = BT_UUID_INIT_128(
 static const struct bt_uuid_128 vnd_long_uuid2 = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x12340, 0x5678cefaadde));
 
-static uint8_t vnd_value[] = { 'V', 'e', 'n', 'd', 'o', 'r' };
+static uint8_t vnd_value[6] = { 'V', 'e', 'n', 'd', 'o', 'r' };
+BUILD_ASSERT(sizeof(vnd_value) <= BT_ATT_MAX_ATTRIBUTE_LEN);
 
 static const struct bt_uuid_128 vnd1_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x12340, 0x56789abcdef4));
@@ -850,10 +851,8 @@ static ssize_t write_vnd1(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 static ssize_t read_vnd(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			void *buf, uint16_t len, uint16_t offset)
 {
-	const char *value = attr->user_data;
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, value,
-				 strlen(value));
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, vnd_value,
+				 (uint16_t)sizeof(vnd_value));
 }
 
 static ssize_t write_vnd(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -871,9 +870,10 @@ static ssize_t write_vnd(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	return len;
 }
 
-#define MAX_DATA 30
-static uint8_t vnd_long_value1[MAX_DATA] = { 'V', 'e', 'n', 'd', 'o', 'r' };
-static uint8_t vnd_long_value2[MAX_DATA] = { 'S', 't', 'r', 'i', 'n', 'g' };
+#define MAX_VND_LONG_DATA 30U
+static uint8_t vnd_long_value1[MAX_VND_LONG_DATA] = { 'V', 'e', 'n', 'd', 'o', 'r' };
+static uint8_t vnd_long_value2[MAX_VND_LONG_DATA] = { 'S', 't', 'r', 'i', 'n', 'g' };
+BUILD_ASSERT(MAX_VND_LONG_DATA <= BT_ATT_MAX_ATTRIBUTE_LEN);
 
 static ssize_t read_long_vnd(struct bt_conn *conn,
 			     const struct bt_gatt_attr *attr, void *buf,
@@ -881,8 +881,7 @@ static ssize_t read_long_vnd(struct bt_conn *conn,
 {
 	uint8_t *value = attr->user_data;
 
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, value,
-				 sizeof(vnd_long_value1));
+	return bt_gatt_attr_read(conn, attr, buf, len, offset, value, MAX_VND_LONG_DATA);
 }
 
 static ssize_t write_long_vnd(struct bt_conn *conn,
@@ -895,7 +894,7 @@ static ssize_t write_long_vnd(struct bt_conn *conn,
 		return 0;
 	}
 
-	if (offset + len > sizeof(vnd_long_value1)) {
+	if (offset + len > MAX_VND_LONG_DATA) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
 	}
 
@@ -913,7 +912,7 @@ static struct bt_gatt_attr vnd_attrs[] = {
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
 			       BT_GATT_PERM_READ_AUTHEN |
 			       BT_GATT_PERM_WRITE_AUTHEN,
-			       read_vnd, write_vnd, vnd_value),
+			       read_vnd, write_vnd, &vnd_value),
 
 	BT_GATT_CHARACTERISTIC(&vnd_long_uuid1.uuid, BT_GATT_CHRC_READ |
 			       BT_GATT_CHRC_WRITE | BT_GATT_CHRC_EXT_PROP,
@@ -1333,7 +1332,7 @@ int cmd_att_mtu(const struct shell *sh, size_t argc, char *argv[])
 }
 
 #define HELP_NONE "[none]"
-#define HELP_ADDR_LE "<address: XX:XX:XX:XX:XX:XX> <type: (public|random)>"
+#define HELP_ADDR_LE "<address: P:XX:XX:XX:XX:XX:XX or R:XX:XX:XX:XX:XX:XX>"
 
 SHELL_STATIC_SUBCMD_SET_CREATE(gatt_cmds,
 #if defined(CONFIG_BT_GATT_CLIENT)
@@ -1360,7 +1359,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(gatt_cmds,
 	SHELL_CMD_ARG(subscribe, NULL, "<CCC handle> <value handle> [ind]",
 		      cmd_subscribe, 3, 1),
 	SHELL_CMD_ARG(resubscribe, NULL, HELP_ADDR_LE" <CCC handle> "
-		      "<value handle> [ind]", cmd_resubscribe, 5, 1),
+		      "<value handle> [ind]", cmd_resubscribe, 4, 1),
 	SHELL_CMD_ARG(write, NULL, "<handle> <offset> <data>", cmd_write, 4, 0),
 	SHELL_CMD_ARG(write-without-response, NULL,
 		      "<handle> <data> [length] [repeat]",

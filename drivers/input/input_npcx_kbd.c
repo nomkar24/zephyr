@@ -146,7 +146,7 @@ static int npcx_kbd_init(const struct device *dev)
 	int ret;
 
 	if (!device_is_ready(clk_dev)) {
-		LOG_ERR("%s device not ready", clk_dev->name);
+		LOG_ERR_DEVICE_NOT_READY(clk_dev);
 		return -ENODEV;
 	}
 
@@ -244,5 +244,3 @@ BUILD_ASSERT(!IS_ENABLED(CONFIG_PM_DEVICE_SYSTEM_MANAGED) ||
 
 BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
 	     "only one nuvoton,npcx-kbd compatible node can be supported");
-BUILD_ASSERT(IN_RANGE(DT_INST_PROP(0, row_size), 1, 8), "invalid row-size");
-BUILD_ASSERT(IN_RANGE(DT_INST_PROP(0, col_size), 1, 18), "invalid col-size");

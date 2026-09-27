@@ -8,6 +8,7 @@
 LOG_MODULE_DECLARE(net_l2_ppp, CONFIG_NET_L2_PPP_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 
 #include <zephyr/net/ppp.h>
@@ -31,9 +32,11 @@ static int ipv6cp_add_iid(struct ppp_context *ctx, struct net_pkt *pkt)
 {
 	uint8_t *iid = ctx->ipv6cp.my_options.iid;
 	size_t iid_len = sizeof(ctx->ipv6cp.my_options.iid);
-	struct net_linkaddr *linkaddr;
+	struct net_linkaddr *linkaddr = net_if_get_link_addr(ctx->iface);
+	int ret;
 
-	linkaddr = net_if_get_link_addr(ctx->iface);
+	NET_ASSERT(linkaddr != NULL);
+
 	if (linkaddr->len == 8) {
 		memcpy(iid, linkaddr->addr, iid_len);
 	} else {
@@ -44,7 +47,11 @@ static int ipv6cp_add_iid(struct ppp_context *ctx, struct net_pkt *pkt)
 		memcpy(iid + 5, linkaddr->addr + 3, 3);
 	}
 
-	net_pkt_write_u8(pkt, INTERFACE_IDENTIFIER_OPTION_LEN);
+	ret = net_pkt_write_u8(pkt, INTERFACE_IDENTIFIER_OPTION_LEN);
+	if (ret < 0) {
+		return ret;
+	}
+
 	return net_pkt_write(pkt, iid, iid_len);
 }
 

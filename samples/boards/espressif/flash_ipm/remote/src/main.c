@@ -16,9 +16,9 @@
 #define ASCII_PATTERN(i) ((uint8_t) i % 128)
 
 #define TEST_PARTITION storage_partition
-#define TEST_PARTITION_DEVICE FIXED_PARTITION_DEVICE(TEST_PARTITION)
-#define TEST_PARTITION_ADDRESS FIXED_PARTITION_ADDRESS(TEST_PARTITION)
-#define TEST_PARTITION_SIZE FIXED_PARTITION_SIZE(TEST_PARTITION)
+#define TEST_PARTITION_DEVICE PARTITION_DEVICE(TEST_PARTITION)
+#define TEST_PARTITION_ADDRESS PARTITION_ADDRESS(TEST_PARTITION)
+#define TEST_PARTITION_SIZE PARTITION_SIZE(TEST_PARTITION)
 
 #define PAGE_SIZE 0x1000
 
@@ -58,7 +58,7 @@ int main(void)
 		ets_printf("ERR\n");
 		return -1;
 	}
-	ets_printf("* Verifing page erased.. ");
+	ets_printf("* Verifying page erased.. ");
 	if (flash_read(flash_dev, TEST_PARTITION_ADDRESS, buf, PAGE_SIZE)) {
 		ets_printf("ERR\n");
 		return -1;
@@ -88,7 +88,7 @@ int main(void)
 	}
 
 	/* Verify written pattern */
-	ets_printf("Step 3: Verify\n* Verifing pattern.. ");
+	ets_printf("Step 3: Verify\n* Verifying pattern.. ");
 	memset(buf, 0, sizeof(buf));
 	if (flash_read(flash_dev, TEST_PARTITION_ADDRESS, buf, PAGE_SIZE)) {
 		ets_printf("ERR\n");

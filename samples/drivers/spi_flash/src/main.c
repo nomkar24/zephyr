@@ -17,7 +17,7 @@
 	defined(CONFIG_BOARD_ARTY_A7_DESIGNSTART_FPGA_CORTEX_M3)
 /* The FPGA bitstream is stored in the lower 536 sectors of the flash. */
 #define SPI_FLASH_TEST_REGION_OFFSET \
-	DT_REG_SIZE(DT_NODE_BY_FIXED_PARTITION_LABEL(fpga_bitstream))
+	DT_REG_SIZE(DT_NODE_BY_PARTITION_LABEL(fpga_bitstream))
 #elif defined(CONFIG_BOARD_NPCX9M6F_EVB) || \
 	defined(CONFIG_BOARD_NPCX7M6FB_EVB)
 #define SPI_FLASH_TEST_REGION_OFFSET 0x7F000
@@ -46,8 +46,8 @@
 
 #if DT_HAS_COMPAT_STATUS_OKAY(jedec_spi_nor)
 #define SPI_FLASH_COMPAT jedec_spi_nor
-#elif DT_HAS_COMPAT_STATUS_OKAY(jedec_mspi_nor)
-#define SPI_FLASH_COMPAT jedec_mspi_nor
+#elif DT_HAS_COMPAT_STATUS_OKAY(jedec_nor)
+#define SPI_FLASH_COMPAT jedec_nor
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_qspi_nor)
 #define SPI_FLASH_COMPAT st_stm32_qspi_nor
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_ospi_nor)
@@ -178,7 +178,7 @@ void multi_sector_test(const struct device *flash_dev)
 
 	/* Full flash erase if SPI_FLASH_TEST_REGION_OFFSET = 0 and
 	 * SPI_FLASH_SECTOR_SIZE = flash size
-	 * Erase 2 sectors for check for erase of consequtive sectors
+	 * Erase 2 sectors for check for erase of consecutive sectors
 	 */
 	rc = flash_erase(flash_dev, SPI_FLASH_TEST_REGION_OFFSET, SPI_FLASH_SECTOR_SIZE * 2);
 	if (rc != 0) {

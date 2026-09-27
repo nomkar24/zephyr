@@ -21,15 +21,6 @@ config BT_TBS
 
 if BT_TBS
 
-config BT_TBS_SUPPORTED_FEATURES
-	int "Telephone Bearer Service Supported Features"
-	default 1
-	range 0 3
-	help
-	  Bitfield to set supported features of the bearer.
-	  Bit 0: Local Hold and Retrieve
-	  Bit 1: Join calls within Telephone Bearer Service
-
 config BT_TBS_MAX_CALLS
 	int "Telephone Bearer Service Maximum Number Of Calls Supported"
 	default 3
@@ -47,7 +38,7 @@ config BT_TBS_BEARER_COUNT
 config BT_TBS_MAX_SCHEME_LIST_LENGTH
 	int "The maximum length of the URI scheme list"
 	default 30
-	range 0 512
+	range 1 512
 	help
 	  Sets the maximum length of the URI scheme list.
 

@@ -18,12 +18,6 @@
 
 #include <zephyr/data/json.h>
 
-struct json_obj_key_value {
-	const char *key;
-	size_t key_len;
-	struct json_token value;
-};
-
 static bool lexer_consume(struct json_lexer *lex, struct json_token *tok,
 			  enum json_tokens empty_token)
 {
@@ -1026,6 +1020,12 @@ static ptrdiff_t get_elem_size(const struct json_obj_descr *descr)
 	case JSON_TOK_TRUE:
 	case JSON_TOK_FALSE:
 		return sizeof(bool);
+	case JSON_TOK_NULL:
+		/*
+		 * JSON null type has no associated data, nevertheless
+		 * return the size of the field in the backing struct.
+		 */
+		return descr->field.size;
 	case JSON_TOK_ARRAY_START: {
 		ptrdiff_t size;
 
@@ -1159,6 +1159,9 @@ static int64_t obj_parse(struct json_obj *obj, const struct json_obj_descr *desc
 	int ret;
 
 	while (!obj_next(obj, &kv)) {
+		bool any_descriptor_matched_name = false;
+		bool field_decoded = false;
+
 		if (kv.value.type == JSON_TOK_OBJECT_END) {
 			return decoded_fields;
 		}
@@ -1181,15 +1184,55 @@ static int64_t obj_parse(struct json_obj *obj, const struct json_obj_descr *desc
 				continue;
 			}
 
+			any_descriptor_matched_name = true;
+
 			/* Store the decoded value */
 			ret = decode_value(obj, &descr[i], &kv.value,
 					   decode_field, val);
 			if (ret < 0) {
-				return ret;
+				/*
+				 * When decode fails, we must distinguish between two cases:
+				 *
+				 * 1. Type mismatch: The JSON token type didn't match what the
+				 *    descriptor expected (e.g., token is STRING but descriptor
+				 *    expects ARRAY). In this case, equivalent_types() returned
+				 *    false and decode_value() exited early - no parsing occurred
+				 *    and the lexer state is still valid. Safe to continue and
+				 *    try alternate descriptors.
+				 *
+				 * 2. Parse failure: The token type matched but parsing the
+				 *    complex structure (object/array) failed internally. The
+				 *    lexer has advanced through partial content and its state
+				 *    may be corrupted. Must return error immediately.
+				 *
+				 * We check the actual token type (kv.value.type) rather than
+				 * the descriptor type to determine if complex parsing was
+				 * actually attempted.
+				 */
+				if (kv.value.type == JSON_TOK_OBJECT_START ||
+				    kv.value.type == JSON_TOK_ARRAY_START) {
+					return ret;
+				}
+				continue;
 			}
 
 			decoded_fields |= (int64_t)1<<i;
+			field_decoded = true;
 			break;
+		}
+
+		/*
+		 * If the field name matched at least one descriptor but all decode
+		 * attempts failed, propagate an error.
+		 *
+		 * Note: 'ret' contains the error code from the last failed
+		 * decode_value() attempt. When multiple descriptors share the same
+		 * field name (for example, in polymorphic decoding scenarios), the
+		 * specific error code returned here is implementation-defined and may
+		 * depend on descriptor ordering.
+		 */
+		if (any_descriptor_matched_name && !field_decoded) {
+			return ret;
 		}
 
 		/* Skip field, if no descriptor was found */
@@ -1266,6 +1309,78 @@ int json_arr_separate_parse_object(struct json_obj *json, const struct json_obj_
 	}
 
 	return obj_parse(json, descr, descr_len, val);
+}
+
+int json_obj_separate_parse_init(struct json_obj *json, char *payload, size_t len)
+{
+	return obj_init(json, payload, len);
+}
+
+int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv)
+{
+	int ret = obj_next(json, kv);
+
+	if (ret < 0 || kv->key == NULL) {
+		return ret;
+	}
+
+	/*
+	 * obj_next() returns a container value as its start token only. Walk the
+	 * token stream to the matching close so the caller receives the full
+	 * balanced {...} / [...] span and the walk resyncs to the next member.
+	 * Strings are single lexer tokens, so braces inside a string value do not
+	 * affect the walk.
+	 */
+	if (kv->value.type == JSON_TOK_OBJECT_START || kv->value.type == JSON_TOK_ARRAY_START) {
+		enum json_tokens type = kv->value.type;
+		char *start = kv->value.start;
+		struct json_token tok;
+		uint64_t kinds = (type == JSON_TOK_ARRAY_START) ? 1U : 0U;
+		int depth = 1;
+
+		do {
+			if (!lexer_next(&json->lex, &tok)) {
+				return -EINVAL;
+			}
+
+			switch (tok.type) {
+			case JSON_TOK_OBJECT_START:
+			case JSON_TOK_ARRAY_START:
+				if (depth >= 64) {
+					return -EINVAL;
+				}
+				if (tok.type == JSON_TOK_ARRAY_START) {
+					kinds |= ((uint64_t)1 << depth);
+				} else {
+					kinds &= ~((uint64_t)1 << depth);
+				}
+				depth++;
+				break;
+			case JSON_TOK_OBJECT_END:
+			case JSON_TOK_ARRAY_END: {
+				bool closed_array = (tok.type == JSON_TOK_ARRAY_END);
+				bool opened_array;
+
+				depth--;
+				opened_array = ((kinds >> depth) & 1U) != 0U;
+				if (closed_array != opened_array) {
+					return -EINVAL;
+				}
+				break;
+			}
+			case JSON_TOK_ERROR:
+				return -EINVAL;
+			default:
+				break;
+			}
+		} while (depth > 0);
+
+		kv->value.type = type;
+		kv->value.start = start;
+		kv->value.end = tok.end;
+	}
+
+	return ret;
 }
 
 static char escape_as(char chr)
@@ -1551,7 +1666,8 @@ static int float_encode(const float *num, json_append_bytes_t append_bytes, void
 	char buf[sizeof("-3.40282347e+38")];
 	int ret;
 
-	ret = print_double(buf, sizeof(buf), "%.9g", (double)*num);
+	ret = print_double(buf, sizeof(buf),
+			   "%." STRINGIFY(CONFIG_JSON_FLOAT_PRECISION) "g", (double)*num);
 
 	if (ret < 0) {
 		return ret;
@@ -1568,7 +1684,8 @@ static int double_encode(const double *num, json_append_bytes_t append_bytes, vo
 	char buf[sizeof("-1.797693134862316e+308")];
 	int ret;
 
-	ret = print_double(buf, sizeof(buf), "%.16g", *num);
+	ret = print_double(buf, sizeof(buf),
+			   "%." STRINGIFY(CONFIG_JSON_DOUBLE_PRECISION) "g", *num);
 
 	if (ret < 0) {
 		return ret;
@@ -1688,6 +1805,11 @@ static int bool_encode(const bool *value, json_append_bytes_t append_bytes,
 	return append_bytes("false", 5, data);
 }
 
+static int null_encode(json_append_bytes_t append_bytes, void *data)
+{
+	return append_bytes("null", 4, data);
+}
+
 static int encode(const struct json_obj_descr *descr, const void *val,
 		  json_append_bytes_t append_bytes, void *data)
 {
@@ -1731,6 +1853,8 @@ static int encode(const struct json_obj_descr *descr, const void *val,
 		return opaque_string_encode(ptr, append_bytes, data);
 	case JSON_TOK_ENCODED_OBJ:
 		return encoded_obj_encode(ptr, append_bytes, data);
+	case JSON_TOK_NULL:
+		return null_encode(append_bytes, data);
 	default:
 		return -EINVAL;
 	}
@@ -2076,6 +2200,9 @@ static int encode_mixed_value(const struct json_mixed_arr_descr *elem,
 	}
 	case JSON_TOK_ENCODED_OBJ: {
 		return encoded_obj_encode((const char **)field, append_bytes, data);
+	}
+	case JSON_TOK_NULL: {
+		return null_encode(append_bytes, data);
 	}
 	default:
 		return -EINVAL;

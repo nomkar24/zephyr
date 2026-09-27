@@ -6,10 +6,18 @@
 /**
  * @file stepper_tmcm3216.h
  * @brief Public API for ADI TMCM-3216 stepper motor controller
+ * @ingroup tmcm3216_stepper_ctrl
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_STEPPER_TMCM3216_H_
 #define ZEPHYR_INCLUDE_DRIVERS_STEPPER_TMCM3216_H_
+
+/**
+ * @brief ADI TMCM-3216 Stepper Controller
+ * @defgroup tmcm3216_stepper_ctrl TMCM-3216 Stepper Controller
+ * @ingroup stepper_interface_ext
+ * @{
+ */
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/stepper/stepper.h>
@@ -37,15 +45,6 @@ struct tmcm3216_status {
 };
 
 /**
- * @brief Set maximum velocity for TMCM-3216 motor
- *
- * @param dev Pointer to the stepper device
- * @param velocity Maximum velocity value
- * @return 0 on success, negative errno on failure
- */
-int tmcm3216_set_max_velocity(const struct device *dev, uint32_t velocity);
-
-/**
  * @brief Get maximum velocity for TMCM-3216 motor
  *
  * @param dev Pointer to the stepper device
@@ -53,15 +52,6 @@ int tmcm3216_set_max_velocity(const struct device *dev, uint32_t velocity);
  * @return 0 on success, negative errno on failure
  */
 int tmcm3216_get_max_velocity(const struct device *dev, uint32_t *velocity);
-
-/**
- * @brief Set maximum acceleration for TMCM-3216 motor
- *
- * @param dev Pointer to the stepper device
- * @param acceleration Maximum acceleration value
- * @return 0 on success, negative errno on failure
- */
-int tmcm3216_set_max_acceleration(const struct device *dev, uint32_t acceleration);
 
 /**
  * @brief Get actual velocity of TMCM-3216 motor
@@ -80,6 +70,10 @@ int tmcm3216_get_actual_velocity(const struct device *dev, int32_t *velocity);
  * @return 0 on success, negative errno on failure
  */
 int tmcm3216_get_status(const struct device *dev, struct tmcm3216_status *status);
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }

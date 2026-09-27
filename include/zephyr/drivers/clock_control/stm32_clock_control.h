@@ -7,8 +7,26 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Clock control definitions for STMicroelectronics STM32 devices.
+ *
+ * The symbols in this header are Devicetree-derived clock-configuration internals used by the
+ * STM32 clock driver; they are not part of the public application API.
+ * @ingroup clock_control_stm32
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_STM32_CLOCK_CONTROL_H_
 #define ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_STM32_CLOCK_CONTROL_H_
+
+/**
+ * @defgroup clock_control_stm32 STMicroelectronics STM32
+ * @ingroup clock_control_interface_ext
+ * @{
+ */
+
+/** @cond INTERNAL_HIDDEN */
 
 #include <zephyr/drivers/clock_control.h>
 
@@ -17,6 +35,8 @@
 
 #if defined(CONFIG_SOC_SERIES_STM32C0X)
 #include <zephyr/dt-bindings/clock/stm32c0_clock.h>
+#elif defined(CONFIG_SOC_SERIES_STM32C5X)
+#include <zephyr/dt-bindings/clock/stm32c5_clock.h>
 #elif defined(CONFIG_SOC_SERIES_STM32F0X)
 #include <zephyr/dt-bindings/clock/stm32f0_clock.h>
 #elif defined(CONFIG_SOC_SERIES_STM32F1X)
@@ -71,6 +91,8 @@
 #include <zephyr/dt-bindings/clock/stm32u5_clock.h>
 #elif defined(CONFIG_SOC_SERIES_STM32WBAX)
 #include <zephyr/dt-bindings/clock/stm32wba_clock.h>
+#elif defined(CONFIG_SOC_SERIES_STM32WL3X)
+#include <zephyr/dt-bindings/clock/stm32wl3_clock.h>
 #else
 #include <zephyr/dt-bindings/clock/stm32_clock.h>
 #endif
@@ -155,6 +177,15 @@
 #if DT_SAME_NODE(DT_RCC_CLOCKS_CTRL, DT_NODELABEL(ic2))
 #define STM32_SYSCLK_SRC_IC2	1
 #endif
+#if DT_SAME_NODE(DT_RCC_CLOCKS_CTRL, DT_NODELABEL(clk_hsis))
+#define STM32_SYSCLK_SRC_HSIS	1
+#endif
+#if DT_SAME_NODE(DT_RCC_CLOCKS_CTRL, DT_NODELABEL(clk_hsidiv3))
+#define STM32_SYSCLK_SRC_HSIDIV3	1
+#endif
+#if DT_SAME_NODE(DT_RCC_CLOCKS_CTRL, DT_NODELABEL(clk_psis))
+#define STM32_SYSCLK_SRC_PSIS	1
+#endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(rcc), st_stm32n6_rcc, okay)
 #if (DT_SAME_NODE(DT_CLOCKS_CTLR_BY_IDX(DT_NODELABEL(cpusw), 0), DT_NODELABEL(rcc)))
@@ -177,6 +208,21 @@
 #define STM32_CK48_ENABLED	1
 #endif
 
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(rcc), st_stm32c5_rcc, okay)
+#define STM32_PSI_FREQ_MHZ_ENABLED	DT_NODE_HAS_PROP(DT_NODELABEL(rcc), st_psi_frequency)
+#if STM32_PSI_FREQ_MHZ_ENABLED
+#define STM32_PSI_FREQ_MHZ		DT_PROP(DT_NODELABEL(rcc), st_psi_frequency)
+#else
+#define STM32_PSI_FREQ_MHZ		144 /* Dummy value used for macro construction */
+#endif /* STM32_PSI_FREQ_MHZ_ENABLED */
+#define STM32_PSI_SOURCE_ENABLED	DT_NODE_HAS_PROP(DT_NODELABEL(rcc), st_psi_source)
+#if STM32_PSI_SOURCE_ENABLED
+#define STM32_PSI_SOURCE		DT_STRING_UPPER_TOKEN(DT_NODELABEL(rcc), st_psi_source)
+#else
+#define STM32_PSI_SOURCE		HSIDIV18 /* Dummy value used for macro construction */
+#endif /* STM32_PSI_SOURCE_ENABLED */
+#endif /* compat st_stm32c5_rcc */
+
 /** PLL node related symbols */
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32fx_pll_clock, okay) || \
@@ -187,6 +233,7 @@
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32u5_pll_clock, okay)  || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32wb_pll_clock, okay)  || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32wba_pll_clock, okay) || \
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32h5_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32h7_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32h7rs_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll), st_stm32mp13_pll_clock, okay)
@@ -266,6 +313,7 @@
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll2), st_stm32u5_pll_clock, okay) || \
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll2), st_stm32h5_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll2), st_stm32h7_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll2), st_stm32h7rs_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll2), st_stm32mp13_pll_clock, okay)
@@ -286,7 +334,8 @@
 #define STM32_PLL2_FRACN_VALUE	DT_PROP_OR(DT_NODELABEL(pll2), fracn, 0)
 #endif
 
-#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32h7_pll_clock, okay) || \
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32h5_pll_clock, okay) || \
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32h7_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32u5_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32h7rs_pll_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(pll3), st_stm32mp13_pll_clock, okay)
@@ -413,6 +462,9 @@
 #if DT_SAME_NODE(DT_PLL2_CLOCKS_CTRL, DT_NODELABEL(clk_hsi))
 #define STM32_PLL2_SRC_HSI	1
 #endif
+#if DT_SAME_NODE(DT_PLL2_CLOCKS_CTRL, DT_NODELABEL(clk_csi))
+#define STM32_PLL2_SRC_CSI	1
+#endif
 #if DT_SAME_NODE(DT_PLL2_CLOCKS_CTRL, DT_NODELABEL(clk_hse))
 #define STM32_PLL2_SRC_HSE	1
 #endif
@@ -431,6 +483,9 @@
 #endif
 #if DT_SAME_NODE(DT_PLL3_CLOCKS_CTRL, DT_NODELABEL(clk_hsi))
 #define STM32_PLL3_SRC_HSI	1
+#endif
+#if DT_SAME_NODE(DT_PLL3_CLOCKS_CTRL, DT_NODELABEL(clk_csi))
+#define STM32_PLL3_SRC_CSI	1
 #endif
 #if DT_SAME_NODE(DT_PLL3_CLOCKS_CTRL, DT_NODELABEL(clk_hse))
 #define STM32_PLL3_SRC_HSE	1
@@ -525,26 +580,25 @@
 #define STM32_LSE_DRIVING	DT_PROP(DT_NODELABEL(clk_lse), driving_capability)
 #define STM32_LSE_BYPASS	DT_PROP(DT_NODELABEL(clk_lse), lse_bypass)
 #else
-#define STM32_LSE_ENABLED	0
 #define STM32_LSE_FREQ		0
 #define STM32_LSE_DRIVING	0
 #define STM32_LSE_BYPASS	0
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msi), st_stm32_msi_clock, okay) || \
-	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msi), st_stm32l0_msi_clock, okay)
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msi), st_stm32l0_msi_clock, okay) || \
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msi), st_stm32n6_msi_clock, okay)
 #define STM32_MSI_ENABLED	1
 #define STM32_MSI_RANGE		DT_PROP(DT_NODELABEL(clk_msi), msi_range)
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msi), st_stm32_msi_clock, okay)
-#define STM32_MSI_ENABLED	1
 #define STM32_MSI_PLL_MODE	DT_PROP(DT_NODELABEL(clk_msi), msi_pll_mode)
-#endif
 
-#if defined(CONFIG_SOC_SERIES_STM32L4X) && STM32_MSI_PLL_MODE && !STM32_LSE_ENABLED
-#error "On STM32L4 series, MSI PLL mode requires LSE to be enabled"
-#endif
+# if defined(CONFIG_SOC_SERIES_STM32L4X) && STM32_MSI_PLL_MODE && !defined(STM32_LSE_ENABLED)
+# error "On STM32L4 series, MSI PLL mode requires LSE to be enabled"
+# endif /* stm32l4 && msi_pll_mode && !STM32_LSE_ENABLED */
+#endif /* st_stm32_msi_clock */
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msis), st_stm32u5_msi_clock, okay) || \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_msis), st_stm32u3_msi_clock, okay)
@@ -552,7 +606,6 @@
 #define STM32_MSIS_RANGE	DT_PROP(DT_NODELABEL(clk_msis), msi_range)
 #define STM32_MSIS_PLL_MODE	DT_PROP(DT_NODELABEL(clk_msis), msi_pll_mode)
 #else
-#define STM32_MSIS_ENABLED	0
 #define STM32_MSIS_RANGE	0
 #define STM32_MSIS_PLL_MODE	0
 #endif
@@ -563,7 +616,6 @@
 #define STM32_MSIK_RANGE	DT_PROP(DT_NODELABEL(clk_msik), msi_range)
 #define STM32_MSIK_PLL_MODE	DT_PROP(DT_NODELABEL(clk_msik), msi_pll_mode)
 #else
-#define STM32_MSIK_ENABLED	0
 #define STM32_MSIK_RANGE	0
 #define STM32_MSIK_PLL_MODE	0
 #endif
@@ -601,10 +653,28 @@
 #define STM32_HSI_ENABLED	1
 #define STM32_HSI_DIVISOR	DT_PROP(DT_NODELABEL(clk_hsi), hsi_div)
 #define STM32_HSI_FREQ		DT_PROP(DT_NODELABEL(clk_hsi), clock_frequency)
+#elif DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_hsis), fixed_clock, okay)
+#define STM32_HSIS_ENABLED	1
+#define STM32_HSIS_FREQ		DT_PROP(DT_NODELABEL(clk_hsis), clock_frequency)
 #else
-#define STM32_HSI_DIV_ENABLED	0
 #define STM32_HSI_DIVISOR	1
 #define STM32_HSI_FREQ		0
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_hsidiv3), fixed_clock, okay)
+#define STM32_HSIDIV3_ENABLED	1
+#define STM32_HSIDIV3_FREQ	DT_PROP(DT_NODELABEL(clk_hsidiv3), clock_frequency)
+#else
+#define STM32_HSIDIV3_FREQ	0
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_hsik), st_stm32c5_xsik_clock, okay)
+#define STM32_HSIK_ENABLED	1
+#define STM32_HSIK_DIVIDER	DT_STRING_UPPER_TOKEN(DT_NODELABEL(clk_hsik), xsik_div)
+#define STM32_HSIK_FREQ		DT_PROP(DT_NODELABEL(clk_hsik), clock_frequency)
+#else
+#define STM32_HSIK_DIVIDER	1
+#define STM32_HSIK_FREQ		0
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_hse), fixed_clock, okay)
@@ -614,7 +684,9 @@
 #define STM32_HSE_ENABLED	1
 #define STM32_HSE_BYPASS	DT_PROP(DT_NODELABEL(clk_hse), hse_bypass)
 #define STM32_HSE_FREQ		DT_PROP(DT_NODELABEL(clk_hse), clock_frequency)
-#define STM32_HSE_CSS		DT_PROP(DT_NODELABEL(clk_hse), css_enabled)
+#if DT_PROP(DT_NODELABEL(clk_hse), css_enabled)
+#define STM32_HSE_CSS		1
+#endif /* css_enabled */
 #elif DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_hse), st_stm32wl_hse_clock, okay)
 #define STM32_HSE_ENABLED	1
 #define STM32_HSE_TCXO		DT_PROP(DT_NODELABEL(clk_hse), hse_tcxo)
@@ -640,6 +712,36 @@
 #define STM32_HSI48_ENABLED	1
 #define STM32_HSI48_FREQ	DT_PROP(DT_NODELABEL(clk_hsi48), clock_frequency)
 #define STM32_HSI48_CRS_USB_SOF	DT_PROP(DT_NODELABEL(clk_hsi48), crs_usb_sof)
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_psis), fixed_clock, okay)
+#define STM32_PSIS_ENABLED	1
+#define STM32_PSIS_FREQ		DT_PROP(DT_NODELABEL(clk_psis), clock_frequency)
+#else
+#define STM32_PSIS_FREQ		0
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_psidiv3), fixed_clock, okay)
+#define STM32_PSIDIV3_ENABLED	1
+#define STM32_PSIDIV3_FREQ	DT_PROP(DT_NODELABEL(clk_psidiv3), clock_frequency)
+#else
+#define STM32_PSIDIV3_FREQ	0
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_psik), st_stm32c5_xsik_clock, okay)
+#define STM32_PSIK_ENABLED	1
+#define STM32_PSIK_DIVIDER	DT_STRING_UPPER_TOKEN(DT_NODELABEL(clk_psik), xsik_div)
+#define STM32_PSIK_FREQ		DT_PROP(DT_NODELABEL(clk_psik), clock_frequency)
+#else
+#define STM32_PSIK_DIVIDER	1
+#define STM32_PSIK_FREQ		0
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_shsi), fixed_clock, okay)
+#define STM32_SHSI_ENABLED	1
+#define STM32_SHSI_FREQ	DT_PROP(DT_NODELABEL(clk_shsi), clock_frequency)
+#else
+#define STM32_SHSI_FREQ	0
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(perck), st_stm32_clock_mux, okay)
@@ -783,11 +885,11 @@ struct stm32_pclken {
 /* Get STM32 clock information for an indexed clock phandle in a DT node */
 #define STM32_CLOCK_INFO(clk_index, node_id)					\
 	{									\
-		.enr = DT_CLOCKS_CELL_BY_IDX(node_id, clk_index, bits),		\
 		.bus = DT_CLOCKS_CELL_BY_IDX(node_id, clk_index, bus) &		\
 		       GENMASK(STM32_CLOCK_DIV_SHIFT - 1, 0),			\
 		.div = DT_CLOCKS_CELL_BY_IDX(node_id, clk_index, bus) >>	\
 		       STM32_CLOCK_DIV_SHIFT,					\
+		.enr = DT_CLOCKS_CELL_BY_IDX(node_id, clk_index, bits),		\
 	}
 
 /* Get an array of STM32 clocks information for clocks listed in a DT node */
@@ -797,33 +899,33 @@ struct stm32_pclken {
 			STM32_CLOCK_INFO, (,), node_id)			\
 	}
 
-/* Get an array of STM32 clocks information for clocks listed in a DT_DRV_COMPAT instance node */
+/* Get an array of STM32 clocks information for clocks listed in a @c DT_DRV_COMPAT instance node */
 #define STM32_DT_INST_CLOCKS(inst)					\
 	STM32_DT_CLOCKS(DT_DRV_INST(inst))
 
-/* Get STM32 clock information for an indexed clock phandle in a DT_DRV_COMPAT instance node */
+/* Get STM32 clock information for an indexed clock phandle in a @c DT_DRV_COMPAT instance node */
 #define STM32_DT_INST_CLOCK_INFO_BY_IDX(clk_index, inst)		\
 	STM32_CLOCK_INFO(clk_index, DT_DRV_INST(inst))
 
-/* Get STM32 clock information for clock index 0 in a DT_DRV_COMPAT instance node */
+/* Get STM32 clock information for clock index 0 in a @c DT_DRV_COMPAT instance node */
 #define STM32_DT_INST_CLOCK_INFO(inst)					\
 	STM32_DT_INST_CLOCK_INFO_BY_IDX(0, inst)
 
 /* Get STM32 clock information for a named clock phandle in DT node */
-#define STM32_CLOCK_INFO_BY_NAME(node_id, name)				\
+#define STM32_DT_CLOCK_INFO_BY_NAME(node_id, name)				\
 	{								\
-		.enr = DT_CLOCKS_CELL_BY_NAME(node_id, name, bits),	\
 		.bus = DT_CLOCKS_CELL_BY_NAME(node_id, name, bus) &	\
 		       GENMASK(STM32_CLOCK_DIV_SHIFT - 1, 0),		\
 		.div = DT_CLOCKS_CELL_BY_NAME(node_id, name, bus) >>	\
 		       STM32_CLOCK_DIV_SHIFT,				\
+		.enr = DT_CLOCKS_CELL_BY_NAME(node_id, name, bits),	\
 	}
 
-/* Get STM32 clock information for named clock phandle in a DT_DRV_COMPAT instance node */
+/* Get STM32 clock information for named clock phandle in a @c DT_DRV_COMPAT instance node */
 #define STM32_DT_INST_CLOCK_INFO_BY_NAME(inst, name)			\
-	STM32_CLOCK_INFO_BY_NAME(DT_DRV_INST(inst), name)
+	STM32_DT_CLOCK_INFO_BY_NAME(DT_DRV_INST(inst), name)
 
-/* Return true only if at least an enabled instance of the DT_DRV_COMPAT has at least 2 clocks */
+/* Return true only if at least an enabled instance of the @c DT_DRV_COMPAT has at least 2 clocks */
 #define STM32_DOMAIN_CLOCK_INST_SUPPORT(inst) DT_INST_CLOCKS_HAS_IDX(inst, 1) ||
 #define STM32_DT_INST_DEV_DOMAIN_CLOCK_SUPPORT				\
 		(DT_INST_FOREACH_STATUS_OKAY(STM32_DOMAIN_CLOCK_INST_SUPPORT) 0)
@@ -872,7 +974,7 @@ struct stm32_pclken {
  * overridden.
  */
 void stm32_hse_css_callback(void);
-#endif
+#endif /* STM32_HSE_CSS */
 
 #ifdef CONFIG_SOC_SERIES_STM32WB0X
 /**
@@ -894,5 +996,9 @@ typedef void (*lsi_update_cb_t)(uint32_t new_lsi_frequency);
  */
 int stm32wb0_register_lsi_update_callback(lsi_update_cb_t cb);
 #endif /* CONFIG_SOC_SERIES_STM32WB0X */
+
+/** @endcond */
+
+/** @} */
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_STM32_CLOCK_CONTROL_H_ */

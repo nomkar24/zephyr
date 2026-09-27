@@ -9,12 +9,10 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/video.h>
-#include <zephyr/drivers/video-controls.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/video/video.h>
 
 #include "video_common.h"
-#include "video_ctrls.h"
-#include "video_device.h"
 
 LOG_MODULE_REGISTER(video_hm0360, CONFIG_VIDEO_LOG_LEVEL);
 
@@ -654,7 +652,10 @@ static int hm0360_set_frmival(const struct device *dev, struct video_frmival *fr
 		highres = true;
 	}
 
-	video_closest_frmival(dev, &fie);
+	ret = video_closest_frmival(dev, &fie);
+	if (ret < 0) {
+		return ret;
+	}
 	LOG_DBG("Applying frame interval number %u", fie.index);
 
 	switch (fie.index) {

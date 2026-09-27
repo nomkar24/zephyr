@@ -49,15 +49,21 @@ void soc_reset_hook(void)
 
 static void soc_rif_config(void)
 {
+#if defined(CONFIG_TRUSTED_EXECUTION_SECURE)
 	/* Enable the clock for the RIFSC (RIF Security Controller) */
 	__HAL_RCC_RIFSC_CLK_ENABLE();
 
+	/* ADC */
+	RIF_SLAVE_SEC_PRIV(ADC12);
 	/* DCMIPP */
 	RIF_MASTER_CID1_SEC_PRIV(DCMIPP);
 	RIF_SLAVE_SEC_PRIV(DCMIPP);
 	/* DMA2D */
 	RIF_MASTER_CID1_SEC_PRIV(DMA2D);
 	RIF_SLAVE_SEC_PRIV(DMA2D);
+	/* GPU2D */
+	RIF_MASTER_CID1_SEC_PRIV(GPU2D);
+	RIF_SLAVE_SEC_PRIV(GPU2D);
 	/* ETH */
 	RIF_MASTER_CID1_SEC_PRIV(ETH1);
 	RIF_SLAVE_SEC_PRIV(ETH1);
@@ -66,12 +72,15 @@ static void soc_rif_config(void)
 	/* LTDC Layer 1 */
 	RIF_MASTER_CID1_SEC_PRIV(LTDC1);
 	RIF_SLAVE_SEC_PRIV(LTDCL1);
+#ifdef NPU_PRESENT
 	/* NPU */
 	RIF_MASTER_CID1_SEC_PRIV(NPU);
 	RIF_SLAVE_SEC_PRIV(NPU);
+#endif
 	/* VENC */
 	RIF_MASTER_CID1_SEC_PRIV(VENC);
 	RIF_SLAVE_SEC_PRIV(VENC);
+#endif /* CONFIG_TRUSTED_EXECUTION_SECURE */
 }
 
 /**
@@ -106,5 +115,16 @@ void soc_early_init_hook(void)
 	/* RIF configuration */
 	if (IS_ENABLED(CONFIG_STM32N6_RIF_OPEN)) {
 		soc_rif_config();
+	}
+
+	if (IS_ENABLED(CONFIG_STM32N6_BRANCH_CACHE)) {
+		/*
+		 * Enable the Cortex-M55's branch cache.
+		 * CCR.BP is banked between Security states
+		 * so this must be done in every environment.
+		 */
+		SCB->CCR |= SCB_CCR_LOB_Msk;
+		__DSB();
+		__ISB();
 	}
 }

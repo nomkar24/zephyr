@@ -21,7 +21,6 @@ from unittest import mock
 import pytest
 import twisterlib.harness
 from serial import SerialException
-from twisterlib.error import TwisterException
 from twisterlib.handlers import (
     BinaryHandler,
     DeviceHandler,
@@ -29,10 +28,8 @@ from twisterlib.handlers import (
     QEMUHandler,
     SimulationHandler,
 )
-from twisterlib.hardwaremap import DUT
 from twisterlib.statuses import TwisterStatus
 
-# pylint: disable=no-name-in-module
 from . import ZEPHYR_BASE
 
 
@@ -287,7 +284,7 @@ def test_binaryhandler_try_kill_process_by_pid(mocked_instance):
 TESTDATA_3 = [
     (
         [b'This\\r\\n\n', b'is\r', b'some \x1B[31mANSI\x1B[39m in\n', b'a short\n', b'file.'],
-        mock.Mock(status=TwisterStatus.NONE, capture_coverage=False),
+        mock.Mock(status=TwisterStatus.NONE, capture_coverage=False, fault=False),
         [
             mock.call('This\\r\\n\n'),
             mock.call('is\r'),
@@ -307,7 +304,7 @@ TESTDATA_3 = [
     ),
     (
         [b'Too much.'] * 120,  # Should be more than the timeout
-        mock.Mock(status=TwisterStatus.PASS, capture_coverage=False),
+        mock.Mock(status=TwisterStatus.PASS, capture_coverage=False, fault=False),
         None,
         None,
         True,
@@ -315,7 +312,7 @@ TESTDATA_3 = [
     ),
     (
         [b'Too much.'] * 120,  # Should be more than the timeout
-        mock.Mock(status=TwisterStatus.PASS, capture_coverage=False),
+        mock.Mock(status=TwisterStatus.PASS, capture_coverage=False, fault=False),
         None,
         None,
         True,
@@ -323,7 +320,7 @@ TESTDATA_3 = [
     ),
     (
         [b'Too much.'] * 120,  # Should be more than the timeout
-        mock.Mock(status=TwisterStatus.PASS, capture_coverage=True),
+        mock.Mock(status=TwisterStatus.PASS, capture_coverage=True, fault=False),
         None,
         None,
         False,
@@ -498,22 +495,25 @@ def test_binaryhandler_create_env(
 
 
 TESTDATA_6 = [
-    (TwisterStatus.NONE, False, 2, True, TwisterStatus.FAIL, 'Valgrind error', False),
-    (TwisterStatus.NONE, False, 1, False, TwisterStatus.FAIL, 'Exited with 1', False),
-    (TwisterStatus.FAIL, False, 0, False, TwisterStatus.FAIL, "foobar", False),
-    ('success', False, 0, False, 'success', None, False),
-    (TwisterStatus.NONE, True, 1, True, TwisterStatus.FAIL, 'Exited with 1', True),
+    (TwisterStatus.NONE, False, False, 2, True, TwisterStatus.FAIL, 'Valgrind error', False),
+    (TwisterStatus.NONE, False, False, 1, False, TwisterStatus.FAIL, 'Exited with 1', False),
+    (TwisterStatus.NONE, True, False, 1, False, TwisterStatus.FAIL,
+     'Fault detected while running test', False),
+    (TwisterStatus.FAIL, False, False, 0, False, TwisterStatus.FAIL, "foobar", False),
+    ('success', False, False, 0, False, 'success', None, False),
+    (TwisterStatus.NONE, False, True, 1, True, TwisterStatus.FAIL, 'Exited with 1', True),
 ]
 
 @pytest.mark.parametrize(
-    'harness_status, terminated, returncode, enable_valgrind,' \
+    'harness_status, harness_fault, terminated, returncode, enable_valgrind,' \
     ' expected_status, expected_reason, do_add_missing',
     TESTDATA_6,
-    ids=['valgrind error', 'failed', 'harness failed', 'custom success', 'no status']
+    ids=['valgrind error', 'failed', 'crash', 'harness failed', 'custom success', 'no status']
 )
 def test_binaryhandler_update_instance_info(
     mocked_instance,
     harness_status,
+    harness_fault,
     terminated,
     returncode,
     enable_valgrind,
@@ -528,7 +528,7 @@ def test_binaryhandler_update_instance_info(
     handler.returncode = returncode
     missing_mock = mock.Mock()
     handler.instance.add_missing_case_status = missing_mock
-    mocked_harness = mock.Mock(status=harness_status, reason="foobar")
+    mocked_harness = mock.Mock(status=harness_status, reason="foobar", fault=harness_fault)
 
     handler._update_instance_info(mocked_harness)
 
@@ -733,220 +733,6 @@ def test_devicehandler_monitor_serial_splitlines(mocked_instance):
     assert harness.handle.call_count == 2
 
 
-TESTDATA_10 = [
-    (
-        'dummy_platform',
-        'dummy fixture',
-        [
-            mock.Mock(
-                fixtures=[],
-                platform='dummy_platform',
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='another_platform',
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=None,
-                serial=None,
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            )
-        ],
-        3
-    ),
-    (
-        'dummy_platform',
-        'dummy fixture',
-        [
-            mock.Mock(
-                fixtures=[],
-                platform='dummy_platform',
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='another_platform',
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=None,
-                serial=None,
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                available=1,
-                failures=1,
-                counter_increment=mock.Mock(),
-                counter=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                available=1,
-                failures=0,
-                counter_increment=mock.Mock(),
-                counter=0
-            )
-        ],
-        4
-    ),
-    (
-        'dummy_platform',
-        'dummy fixture',
-        [],
-        TwisterException
-    ),
-    (
-        'dummy_platform',
-        'dummy fixture',
-        [
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                counter_increment=mock.Mock(),
-                failures=0,
-                available=0
-            ),
-            mock.Mock(
-                fixtures=['another fixture'],
-                platform='dummy_platform',
-                serial_pty=mock.Mock(),
-                counter_increment=mock.Mock(),
-                failures=0,
-                available=0
-            ),
-            mock.Mock(
-                fixtures=['dummy fixture'],
-                platform='dummy_platform',
-                serial=mock.Mock(),
-                counter_increment=mock.Mock(),
-                failures=0,
-                available=0
-            ),
-            mock.Mock(
-                fixtures=['another fixture'],
-                platform='dummy_platform',
-                serial=mock.Mock(),
-                counter_increment=mock.Mock(),
-                failures=0,
-                available=0
-            )
-        ],
-        None
-    )
-]
-
-@pytest.mark.parametrize(
-    'platform_name, fixture, duts, expected',
-    TESTDATA_10,
-    ids=['two good duts, select the first one',
-         'two duts, the first was failed once, select the second not failed',
-         'exception - no duts', 'no available duts']
-)
-def test_devicehandler_device_is_available(
-    mocked_instance,
-    platform_name,
-    fixture,
-    duts,
-    expected
-):
-    mocked_instance.platform.name = platform_name
-    mocked_instance.testsuite.harness_config = {'fixture': fixture}
-
-    handler = DeviceHandler(mocked_instance, 'build', mock.Mock())
-    handler.duts = duts
-
-    if isinstance(expected, int):
-        device = handler.device_is_available(mocked_instance)
-
-        assert device == duts[expected]
-        assert device.available == 0
-        device.counter_increment.assert_called_once()
-    elif expected is None:
-        device = handler.device_is_available(mocked_instance)
-
-        assert device is None
-    elif isinstance(expected, type):
-        with pytest.raises(expected):
-            device = handler.device_is_available(mocked_instance)
-    else:
-        assert False
-
-
-def test_devicehandler_make_dut_available(mocked_instance):
-    serial = mock.Mock(name='dummy_serial')
-    duts = [
-        mock.Mock(available=0, serial=serial, serial_pty=None),
-        mock.Mock(available=0, serial=None, serial_pty=serial),
-        mock.Mock(
-            available=0,
-            serial=mock.Mock('another_serial'),
-            serial_pty=None
-        )
-    ]
-
-    handler = DeviceHandler(mocked_instance, 'build', mock.Mock())
-    handler.duts = duts
-
-    handler.make_dut_available(duts[1])
-
-    assert len([None for d in handler.duts if d.available == 1]) == 1
-    assert handler.duts[0].available == 0
-    assert handler.duts[2].available == 0
-
-    handler.make_dut_available(duts[0])
-
-    assert len([None for d in handler.duts if d.available == 1]) == 2
-    assert handler.duts[2].available == 0
-
-
 TESTDATA_11 = [
     (mock.Mock(pid=0, returncode=0), False),
     (mock.Mock(pid=0, returncode=1), False),
@@ -997,51 +783,6 @@ def test_devicehandler_run_custom_script(caplog, mock_process, raise_timeout):
         assert 'custom script failure' in caplog.text.lower()
 
 
-TESTDATA_12 = [
-    (0, False),
-    (4, False),
-    (0, True)
-]
-
-@pytest.mark.parametrize(
-    'num_of_failures, raise_exception',
-    TESTDATA_12,
-    ids=['no failures', 'with failures', 'exception']
-)
-def test_devicehandler_get_hardware(
-    mocked_instance,
-    caplog,
-    num_of_failures,
-    raise_exception
-):
-    expected_hardware = mock.Mock()
-
-    def mock_availability(handler, instance, no=num_of_failures):
-        if raise_exception:
-            raise TwisterException(f'dummy message')
-        if handler.no:
-            handler.no -= 1
-            return None
-        return expected_hardware
-
-    handler = DeviceHandler(mocked_instance, 'build', mock.Mock())
-    handler.no = num_of_failures
-
-    with mock.patch.object(
-        DeviceHandler,
-        'device_is_available',
-        mock_availability
-    ):
-        hardware = handler.get_hardware()
-
-    if raise_exception:
-        assert 'dummy message' in caplog.text.lower()
-        assert mocked_instance.status == TwisterStatus.FAIL
-        assert mocked_instance.reason == 'dummy message'
-    else:
-        assert hardware == expected_hardware
-
-
 TESTDATA_13 = [
     (
         None,
@@ -1080,7 +821,8 @@ TESTDATA_13 = [
         'product',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'runner', 'param1', 'param2']
+         '--runner', 'runner', '--base-param1', '--base-param2',
+         '--', '--runner-param1', '--runner-param2']
     ),
 
     (
@@ -1089,7 +831,8 @@ TESTDATA_13 = [
         'product',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'pyocd', 'param1', 'param2', '--', '--dev-id', 12345]
+         '--runner', 'pyocd', '--base-param1', '--base-param2',
+         '--', '--dev-id', 12345, '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1097,7 +840,8 @@ TESTDATA_13 = [
         'product',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'nrfjprog', 'param1', 'param2', '--', '--dev-id', 12345]
+         '--runner', 'nrfjprog', '--base-param1', '--base-param2',
+         '--', '--dev-id', 12345, '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1105,8 +849,8 @@ TESTDATA_13 = [
         'STM32 STLink',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'openocd', 'param1', 'param2',
-         '--', '--cmd-pre-init', 'hla_serial 12345']
+         '--runner', 'openocd', '--base-param1', '--base-param2',
+         '--', '--cmd-pre-init', 'hla_serial 12345', '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1114,8 +858,8 @@ TESTDATA_13 = [
         'STLINK-V3',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'openocd', 'param1', 'param2',
-         '--', '--cmd-pre-init', 'hla_serial 12345']
+         '--runner', 'openocd', '--base-param1', '--base-param2',
+         '--', '--cmd-pre-init', 'hla_serial 12345', '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1123,8 +867,17 @@ TESTDATA_13 = [
         'EDBG CMSIS-DAP',
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
-         '--runner', 'openocd', 'param1', 'param2',
-         '--', '--cmd-pre-init', 'cmsis_dap_serial 12345']
+         '--runner', 'openocd', '--base-param1', '--base-param2',
+         '--', '--cmd-pre-init', 'adapter serial 12345', '--runner-param1', '--runner-param2']
+    ),
+    (
+        None,
+        'openocd',
+        'Raspberry Pi Debug Probe (CMSIS-DAP)',
+        None,
+        ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
+         '--runner', 'openocd', '--base-param1', '--base-param2',
+         '--', '--cmd-pre-init', 'cmsis_dap_serial 12345', '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1133,7 +886,8 @@ TESTDATA_13 = [
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
          '--runner', 'jlink', '--dev-id', 12345,
-         'param1', 'param2']
+         '--base-param1', '--base-param2',
+         '--', '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1142,7 +896,8 @@ TESTDATA_13 = [
         None,
         ['west', 'flash', '--no-rebuild', '-d', '$build_dir',
          '--runner', 'stm32cubeprogrammer', '--dev-id', 12345,
-         'param1', 'param2']
+         '--base-param1', '--base-param2',
+         '--', '--runner-param1', '--runner-param2']
     ),
     (
         None,
@@ -1170,8 +925,8 @@ TESTDATA_13_2 = [(True), (False)]
     ids=['default', '--west-flash', 'one west flash value',
          'multiple west flash values', 'generic runner', 'pyocd',
          'nrfjprog', 'openocd, STM32 STLink', 'openocd, STLINK-v3',
-         'openocd, EDBG CMSIS-DAP', 'jlink', 'stm32cubeprogrammer',
-         'flash_command', 'flash_command with args']
+         'openocd, EDBG CMSIS-DAP', 'openocd, Raspberry Pi Debug Probe (CMSIS-DAP)',
+         'jlink', 'stm32cubeprogrammer', 'flash_command', 'flash_command with args']
 )
 @pytest.mark.parametrize('hardware_probe', TESTDATA_13_2, ids=['probe', 'id'])
 def test_devicehandler_create_command(
@@ -1196,7 +951,8 @@ def test_devicehandler_create_command(
         product=hardware_product_name,
         probe_id=12345 if hardware_probe else None,
         id=12345 if not hardware_probe else None,
-        runner_params=['param1', 'param2'],
+        base_params=['--base-param1', '--base-param2'],
+        runner_params=['--runner-param1', '--runner-param2'],
         west_flash_cmd=None
     )
 
@@ -1206,22 +962,26 @@ def test_devicehandler_create_command(
 
 
 TESTDATA_14 = [
-    ('success', Handler.FailureType.NONE, 'success', None, False),
-    (TwisterStatus.FAIL, Handler.FailureType.NONE, TwisterStatus.FAIL,
+    ('success', False, Handler.FailureType.NONE, 'success', None, False),
+    (TwisterStatus.FAIL, False, Handler.FailureType.NONE, TwisterStatus.FAIL,
         "foobar", True),
-    (TwisterStatus.ERROR, Handler.FailureType.NONE, TwisterStatus.ERROR, 'foobar', True),
-    (TwisterStatus.NONE, Handler.FailureType.NONE, TwisterStatus.FAIL, 'Unknown Error', True),
+    (TwisterStatus.ERROR, False, Handler.FailureType.NONE, TwisterStatus.ERROR, 'foobar', True),
+    (TwisterStatus.NONE, False, Handler.FailureType.NONE, TwisterStatus.FAIL,
+        'Unknown Error', True),
+    (TwisterStatus.NONE, True, Handler.FailureType.TIMEOUT, TwisterStatus.FAIL,
+        'Fault detected while running test', True),
 ]
 
 @pytest.mark.parametrize(
-    'harness_status, failure_type,' \
+    'harness_status, harness_fault, failure_type,' \
     ' expected_status, expected_reason, do_add_missing',
     TESTDATA_14,
-    ids=['custom success', 'failed', 'error', 'no status']
+    ids=['custom success', 'failed', 'error', 'no status', 'crash']
 )
 def test_devicehandler_update_instance_info(
         mocked_instance,
         harness_status,
+        harness_fault,
         failure_type,
         expected_status,
         expected_reason,
@@ -1230,7 +990,7 @@ def test_devicehandler_update_instance_info(
     handler = DeviceHandler(mocked_instance, 'build', mock.Mock())
     missing_mock = mock.Mock()
     handler.instance.add_missing_case_status = missing_mock
-    mocked_harness = mock.Mock(status=harness_status, reason="foobar")
+    mocked_harness = mock.Mock(status=harness_status, reason="foobar", fault=harness_fault)
 
     handler._update_instance_info(mocked_harness, failure_type=failure_type)
 
@@ -1243,15 +1003,14 @@ def test_devicehandler_update_instance_info(
 
 
 TESTDATA_15 = [
-    ('dummy device', 'dummy pty', None, None, True, False, False),
+    ('dummy device', 'dummy pty', None, None, True, False),
     (
         'dummy device',
         'dummy pty',
         mock.Mock(communicate=mock.Mock(return_value=('', ''))),
         SerialException,
         False,
-        True,
-        'dummy pty'
+        True
     ),
     (
         'dummy device',
@@ -1259,14 +1018,13 @@ TESTDATA_15 = [
         None,
         SerialException,
         False,
-        False,
-        'dummy device'
+        False
     )
 ]
 
 @pytest.mark.parametrize(
     'serial_device, serial_pty, ser_pty_process, expected_exception,' \
-    ' expected_result, terminate_ser_pty_process, make_available',
+    ' expected_result, terminate_ser_pty_process',
     TESTDATA_15,
     ids=['valid', 'serial pty process', 'no serial pty']
 )
@@ -1277,8 +1035,7 @@ def test_devicehandler_create_serial_connection(
     ser_pty_process,
     expected_exception,
     expected_result,
-    terminate_ser_pty_process,
-    make_available
+    terminate_ser_pty_process
 ):
     def mock_serial(*args, **kwargs):
         if expected_exception:
@@ -1290,11 +1047,6 @@ def test_devicehandler_create_serial_connection(
     handler.instance.add_missing_case_status = missing_mock
     twisterlib.handlers.terminate_process = mock.Mock()
 
-    dut = DUT()
-    dut.available = 0
-    dut.failures = 0
-    handler.duts = [dut]
-
     hardware_baud = 14400
     flash_timeout = 60
     serial_mock = mock.Mock(side_effect=mock_serial)
@@ -1302,19 +1054,16 @@ def test_devicehandler_create_serial_connection(
     with mock.patch('serial.Serial', serial_mock), \
          pytest.raises(expected_exception) if expected_exception else \
          nullcontext():
-        result = handler._create_serial_connection(dut, serial_device, hardware_baud,
+        result = handler._create_serial_connection(serial_device, hardware_baud,
                                                    flash_timeout, serial_pty,
                                                    ser_pty_process)
 
     if expected_result:
         assert result is not None
-        assert dut.failures == 0
 
     if expected_exception:
         assert handler.instance.status == TwisterStatus.FAIL
         assert handler.instance.reason == 'Serial Device Error'
-        assert dut.available == 1
-        assert dut.failures == 1
         missing_mock.assert_called_once_with('blocked', 'Serial Device Error')
 
     if terminate_ser_pty_process:
@@ -1356,35 +1105,32 @@ def test_devicehandler_start_serial_pty(
         assert result is not None
 
 TESTDATA_17 = [
-    (False, False, False, False, None, False, False,
+    (True, False, False, None, False, False,
      TwisterStatus.NONE, None, []),
-    (True, True, False, False, None, False, False,
-     TwisterStatus.NONE, None, []),
-    (True, False, True, False, None, False, False,
+    (False, True, False, None, False, False,
      TwisterStatus.ERROR, 'Device issue (Flash error)', []),
-    (True, False, False, True, None, False, False,
+    (False, False, True, None, False, False,
      TwisterStatus.ERROR, 'Device issue (Timeout)', ['Flash operation timed out.']),
-    (True, False, False, False, 1, False, False,
+    (False, False, False, 1, False, False,
      TwisterStatus.ERROR, 'Device issue (Flash error?)', []),
-    (True, False, False, False, 0, True, False,
+    (False, False, False, 0, True, False,
      TwisterStatus.NONE, None, ['Timed out while monitoring serial output on IPName']),
-    (True, False, False, False, 0, False, True,
+    (False, False, False, 0, False, True,
      TwisterStatus.NONE, None, ["Terminating serial-pty:'Serial PTY'",
                                 "Terminated serial-pty:'Serial PTY', stdout:'', stderr:''"]),
 ]
 
 @pytest.mark.parametrize(
-    'has_hardware, raise_create_serial, raise_popen, raise_timeout,' \
+    'raise_create_serial, raise_popen, raise_timeout,' \
     ' returncode, do_timeout_thread, use_pty,' \
     ' expected_status, expected_reason, expected_logs',
     TESTDATA_17,
-    ids=['no hardware', 'create serial failure', 'popen called process error',
+    ids=['create serial failure', 'popen called process error',
          'communicate timeout', 'nonzero returncode', 'valid pty', 'valid dev']
 )
 def test_devicehandler_handle(
     mocked_instance,
     caplog,
-    has_hardware,
     raise_create_serial,
     raise_popen,
     raise_timeout,
@@ -1436,7 +1182,7 @@ def test_devicehandler_handle(
             __exit__=mock.Mock(return_value=None)
         )
 
-    hardware = None if not has_hardware else mock.Mock(
+    hardware = mock.Mock(
         baud=14400,
         runner='dummy runner',
         serial_pty='Serial PTY' if use_pty else None,
@@ -1449,7 +1195,7 @@ def test_devicehandler_handle(
     )
 
     handler = DeviceHandler(mocked_instance, 'build', mock.Mock())
-    handler.get_hardware = mock.Mock(return_value=hardware)
+    handler.instance.reserved_duts = [hardware]
     handler.options = mock.Mock(
         timeout_multiplier=1,
         west_flash=None,
@@ -1466,7 +1212,6 @@ def test_devicehandler_handle(
     handler.terminate = mock.Mock(side_effect=mock_terminate)
     handler._update_instance_info = mock.Mock()
     handler._final_handle_actions = mock.Mock()
-    handler.make_dut_available = mock.Mock()
     twisterlib.handlers.terminate_process = mock.Mock()
     handler.instance.platform.name = 'IPName'
 
@@ -1491,13 +1236,8 @@ def test_devicehandler_handle(
          mock.patch('os.ttyname', ttyname_mock):
         handler.handle(harness)
 
-    handler.get_hardware.assert_called_once()
-
     messages = [record.msg for record in caplog.records]
     assert all([msg in messages for msg in expected_logs])
-
-    if not has_hardware:
-        return
 
     handler.run_custom_script.assert_has_calls([
         mock.call('dummy pre script', mock.ANY)
@@ -1516,8 +1256,6 @@ def test_devicehandler_handle(
         assert handler.instance.reason == expected_reason
     if expected_status:
         assert handler.instance.status == expected_status
-
-    handler.make_dut_available.assert_called_once_with(hardware)
 
 
 TESTDATA_18 = [
@@ -1670,6 +1408,7 @@ TESTDATA_21 = [
         False,
         None,
         TwisterStatus.FAIL,
+        False,
         Handler.FailureType.NONE,
         TwisterStatus.FAIL,
         "foobar",
@@ -1680,6 +1419,7 @@ TESTDATA_21 = [
         True,
         None,
         TwisterStatus.FAIL,
+        False,
         Handler.FailureType.NONE,
         TwisterStatus.FAIL,
         "foobar",
@@ -1690,9 +1430,21 @@ TESTDATA_21 = [
         False,
         None,
         TwisterStatus.NONE,
+        False,
         Handler.FailureType.TIMEOUT,
         TwisterStatus.FAIL,
         'Timeout',
+        True
+    ),
+    (
+        0,
+        False,
+        None,
+        TwisterStatus.NONE,
+        True,
+        Handler.FailureType.TIMEOUT,
+        TwisterStatus.FAIL,
+        'Fault detected while running test',
         True
     ),
     (
@@ -1700,6 +1452,7 @@ TESTDATA_21 = [
         False,
         None,
         TwisterStatus.NONE,
+        False,
         Handler.FailureType.NONE,
         TwisterStatus.FAIL,
         'Exited with 1',
@@ -1710,6 +1463,7 @@ TESTDATA_21 = [
         False,
         'preexisting reason',
         'good dummy status',
+        False,
         Handler.FailureType.NONE,
         TwisterStatus.FAIL,
         'preexisting reason',
@@ -1719,10 +1473,10 @@ TESTDATA_21 = [
 
 @pytest.mark.parametrize(
     'self_returncode, self_ignore_qemu_crash,' \
-    ' self_instance_reason, harness_status, failure_type,' \
+    ' self_instance_reason, harness_status, harness_fault, failure_type,' \
     ' expected_status, expected_reason, expected_called_missing_case',
     TESTDATA_21,
-    ids=['not failed', 'qemu ignore', 'timeout', 'bad returncode', 'other fail']
+    ids=['not failed', 'qemu ignore', 'timeout', 'crash', 'bad returncode', 'other fail']
 )
 def test_qemuhandler_update_instance_info(
     mocked_instance,
@@ -1730,6 +1484,7 @@ def test_qemuhandler_update_instance_info(
     self_ignore_qemu_crash,
     self_instance_reason,
     harness_status,
+    harness_fault,
     failure_type,
     expected_status,
     expected_reason,
@@ -1737,7 +1492,7 @@ def test_qemuhandler_update_instance_info(
 ):
     mocked_instance.add_missing_case_status = mock.Mock()
     mocked_instance.reason = self_instance_reason
-    mocked_harness = mock.Mock(status=harness_status, reason="foobar")
+    mocked_harness = mock.Mock(status=harness_status, reason="foobar", fault=harness_fault)
 
     handler = QEMUHandler(mocked_instance, 'build', mock.Mock())
     handler.returncode = self_returncode
@@ -1768,13 +1523,16 @@ TESTDATA_24 = [
     (TwisterStatus.FAIL, 'Execution error', TwisterStatus.FAIL, 'Execution error'),
     (TwisterStatus.FAIL, 'unexpected eof', TwisterStatus.FAIL, 'unexpected eof'),
     (TwisterStatus.FAIL, 'unexpected byte', TwisterStatus.FAIL, 'unexpected byte'),
-    (TwisterStatus.NONE, None, TwisterStatus.NONE, 'Unknown Error'),
+    (TwisterStatus.FAIL, None, TwisterStatus.FAIL, 'Unknown Error'),
+    (TwisterStatus.PASS, None, TwisterStatus.PASS, None),
+    (TwisterStatus.NONE, None, TwisterStatus.NONE, None),
 ]
 
 @pytest.mark.parametrize(
     '_status, _reason, expected_status, expected_reason',
     TESTDATA_24,
-    ids=['timeout', 'failed', 'unexpected eof', 'unexpected byte', 'unknown']
+    ids=['timeout', 'failed', 'unexpected eof', 'unexpected byte',
+         'failed unknown', 'passed no reason', 'unknown']
 )
 def test_qemuhandler_thread_update_instance_info(
     mocked_instance,
@@ -1799,6 +1557,7 @@ TESTDATA_25 = [
         [TwisterStatus.NONE] * 60 + [TwisterStatus.PASS] * 6,
         1000,
         False,
+        False,
         TwisterStatus.FAIL,
         'timeout',
         [mock.call('1\n'), mock.call('1\n')]
@@ -1809,6 +1568,7 @@ TESTDATA_25 = [
         -1,
         [TwisterStatus.NONE] * 60 + [TwisterStatus.PASS] * 30,
         100,
+        False,
         False,
         TwisterStatus.FAIL,
         None,
@@ -1821,6 +1581,7 @@ TESTDATA_25 = [
         [TwisterStatus.PASS] * 3,
         100,
         False,
+        False,
         TwisterStatus.FAIL,
         'unexpected eof',
         []
@@ -1832,6 +1593,7 @@ TESTDATA_25 = [
         [TwisterStatus.PASS] * 3,
         100,
         False,
+        False,
         TwisterStatus.FAIL,
         'unexpected byte',
         []
@@ -1842,6 +1604,7 @@ TESTDATA_25 = [
         1,
         [TwisterStatus.NONE] * 3 + [TwisterStatus.PASS] * 7,
         100,
+        False,
         False,
         TwisterStatus.PASS,
         None,
@@ -1854,6 +1617,7 @@ TESTDATA_25 = [
         [TwisterStatus.NONE] * 3 + [TwisterStatus.PASS] * 7,
         100,
         False,
+        False,
         TwisterStatus.FAIL,
         'timeout',
         [mock.call('1\n'), mock.call('2\n')]
@@ -1865,15 +1629,28 @@ TESTDATA_25 = [
         [TwisterStatus.NONE] * 3 + [TwisterStatus.PASS] * 7,
         (n for n in [100, 100, 10000]),
         True,
+        False,
         TwisterStatus.PASS,
         None,
         [mock.call('1\n'), mock.call('2\n'), mock.call('3\n'), mock.call('4\n')]
+    ),
+    (
+        '1\n2\n3\n4\n5\n'.encode('utf-8'),
+        60,
+        1,
+        [TwisterStatus.NONE] * 30,
+        100,
+        False,
+        True,
+        TwisterStatus.FAIL,
+        'Fault detected while running test',
+        [mock.call('1\n'), mock.call('2\n')]
     ),
 ]
 
 @pytest.mark.parametrize(
     'content, timeout, pid, harness_statuses, cputime, capture_coverage,' \
-    ' expected_status, expected_reason, expected_log_calls',
+    ' harness_fault, expected_status, expected_reason, expected_log_calls',
     TESTDATA_25,
     ids=[
         'timeout',
@@ -1882,7 +1659,8 @@ TESTDATA_25 = [
         'unexpected byte',
         'harness success',
         'timeout by pid=0',
-        'capture_coverage'
+        'capture_coverage',
+        'crash detected'
     ]
 )
 def test_qemuhandler_thread(
@@ -1894,6 +1672,7 @@ def test_qemuhandler_thread(
     harness_statuses,
     cputime,
     capture_coverage,
+    harness_fault,
     expected_status,
     expected_reason,
     expected_log_calls
@@ -1927,7 +1706,7 @@ def test_qemuhandler_thread(
 
         return file_object
 
-    harness = mock.Mock(capture_coverage=capture_coverage, handle=print)
+    harness = mock.Mock(capture_coverage=capture_coverage, handle=print, fault=harness_fault)
     type(harness).status = mock.PropertyMock(side_effect=harness_statuses)
 
     p = mock.Mock()
@@ -1968,7 +1747,7 @@ def test_qemuhandler_thread(
     mock_thread_update_instance_info.assert_called_once_with(
         handler,
         expected_status,
-        mock.ANY
+        expected_reason if expected_reason is not None else mock.ANY
     )
 
     file_objs[handler.log].write.assert_has_calls(expected_log_calls)
@@ -2027,7 +1806,7 @@ def test_qemuhandler_handle(
         handler.pid_fn = os.path.join(sysbuild_build_dir, 'qemu.pid')
         handler.log_fn = os.path.join('dummy', 'log')
 
-    harness = mock.Mock(status=harness_status)
+    harness = mock.Mock(status=harness_status, fault=False)
     handler_options_west_flash = []
 
     domain_build_dir = os.path.join('sysbuild', 'dummydir')

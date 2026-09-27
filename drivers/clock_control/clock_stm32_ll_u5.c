@@ -149,6 +149,7 @@ int enabled_clock(uint32_t src_clk)
 	    ((src_clk == STM32_SRC_LSI) && IS_ENABLED(STM32_LSI_ENABLED)) ||
 	    ((src_clk == STM32_SRC_MSIS) && IS_ENABLED(STM32_MSIS_ENABLED)) ||
 	    ((src_clk == STM32_SRC_MSIK) && IS_ENABLED(STM32_MSIK_ENABLED)) ||
+	    ((src_clk == STM32_SRC_SHSI) && IS_ENABLED(STM32_SHSI_ENABLED)) ||
 	    ((src_clk == STM32_SRC_PLL1_P) && IS_ENABLED(STM32_PLL_P_ENABLED)) ||
 	    ((src_clk == STM32_SRC_PLL1_Q) && IS_ENABLED(STM32_PLL_Q_ENABLED)) ||
 	    ((src_clk == STM32_SRC_PLL1_R) && IS_ENABLED(STM32_PLL_R_ENABLED)) ||
@@ -165,16 +166,17 @@ int enabled_clock(uint32_t src_clk)
 	return -ENOTSUP;
 }
 
+static int stm32_clock_control_configure(const struct device *dev,
+					 clock_control_subsys_t sub_system, void *data);
+
 static int stm32_clock_control_on(const struct device *dev, clock_control_subsys_t sub_system)
 {
 	struct stm32_pclken *pclken = (struct stm32_pclken *)(sub_system);
 	volatile int temp;
 
-	ARG_UNUSED(dev);
-
 	if (!IN_RANGE(pclken->bus, STM32_PERIPH_BUS_MIN, STM32_PERIPH_BUS_MAX)) {
-		/* Attempt to toggle a wrong periph clock bit */
-		return -ENOTSUP;
+		/* Source selection entry: apply it instead of toggling a gate */
+		return stm32_clock_control_configure(dev, sub_system, NULL);
 	}
 
 	sys_set_bits(DT_REG_ADDR(DT_NODELABEL(rcc)) + pclken->bus,
@@ -313,6 +315,11 @@ static int stm32_clock_control_get_subsys_rate(const struct device *dev,
 		*rate = STM32_HSI48_FREQ;
 		break;
 #endif /* STM32_HSI48_ENABLED */
+#if defined(STM32_SHSI_ENABLED)
+	case STM32_SRC_SHSI:
+		*rate = STM32_SHSI_FREQ;
+		break;
+#endif /* STM32_SHSI_ENABLED */
 #if defined(STM32_PLL_ENABLED)
 	case STM32_SRC_PLL1_P:
 		*rate = get_pllout_frequency(get_pllsrc_frequency(PLL1_ID),
@@ -752,6 +759,27 @@ static int set_up_plls(void)
 	return 0;
 }
 
+/*
+ * MSIS and MSIK in PLL mode depends on LSE at 32768Hz (mandatory if present)
+ * If both MSIS and MSIK are in PLL mode, they must use the same MSIRC source,
+ * that is both in one of ranges [0 3] ([12MHz 48MHz]), [4 7] ([1MHz 4MHz]),
+ * [8 11] ([0.768MHz 3.072Mz]) and [12 15] ([100kHz 400kHz]).
+ *
+ * Note: STM32_LSE_FREQ is 0 when LSE clock is disable.
+ * Use two asserts for more precise error messages.
+ */
+#define MSI_PLL_SOURCE_CLOCK_IS_VALID	(STM32_LSE_FREQ == 32768)
+
+BUILD_ASSERT(MSI_PLL_SOURCE_CLOCK_IS_VALID || !STM32_MSIS_PLL_MODE,
+	     "MSIS Hardware auto calibration needs LSE clock activation");
+
+BUILD_ASSERT(MSI_PLL_SOURCE_CLOCK_IS_VALID || !STM32_MSIK_PLL_MODE,
+	     "MSIK Hardware auto calibration needs LSE clock activation");
+
+BUILD_ASSERT(!(STM32_MSIS_PLL_MODE && STM32_MSIK_PLL_MODE) ||
+	     ((STM32_MSIS_RANGE / 4) == (STM32_MSIK_RANGE / 4)),
+	     "Inconsistent MSIRC source for MSIS and MSIK PLL mode");
+
 static void set_up_fixed_clock_sources(void)
 {
 
@@ -817,8 +845,6 @@ static void set_up_fixed_clock_sources(void)
 		LL_RCC_MSIS_SetRange(STM32_MSIS_RANGE << RCC_ICSCR1_MSISRANGE_Pos);
 
 		if (IS_ENABLED(STM32_MSIS_PLL_MODE)) {
-			__ASSERT(STM32_LSE_ENABLED,
-				"MSIS Hardware auto calibration needs LSE clock activation");
 			/* Enable MSI hardware auto calibration */
 			LL_RCC_SetMSIPLLMode(LL_RCC_PLLMODE_MSIS);
 			LL_RCC_MSI_EnablePLLMode();
@@ -839,16 +865,9 @@ static void set_up_fixed_clock_sources(void)
 		LL_RCC_MSIK_SetRange(STM32_MSIK_RANGE << RCC_ICSCR1_MSIKRANGE_Pos);
 
 		if (IS_ENABLED(STM32_MSIK_PLL_MODE)) {
-			__ASSERT(STM32_LSE_ENABLED,
-				"MSIK Hardware auto calibration needs LSE clock activation");
 			/* Enable MSI hardware auto calibration */
 			LL_RCC_SetMSIPLLMode(LL_RCC_PLLMODE_MSIK);
 			LL_RCC_MSI_EnablePLLMode();
-		}
-
-		if (IS_ENABLED(STM32_MSIS_ENABLED)) {
-			__ASSERT((STM32_MSIK_PLL_MODE == STM32_MSIS_PLL_MODE),
-				"Please check MSIS/MSIK config consistency");
 		}
 
 		/* Enable MSIK */
@@ -878,6 +897,12 @@ static void set_up_fixed_clock_sources(void)
 	if (IS_ENABLED(STM32_HSI48_ENABLED)) {
 		LL_RCC_HSI48_Enable();
 		while (LL_RCC_HSI48_IsReady() != 1) {
+		}
+	}
+
+	if (IS_ENABLED(STM32_SHSI_ENABLED)) {
+		LL_RCC_SHSI_Enable();
+		while (LL_RCC_SHSI_IsReady() != 1) {
 		}
 	}
 }

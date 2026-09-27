@@ -98,7 +98,7 @@ struct pcf8563_data {
  * Then we put the number 3 in the last 4 bits and the number 4 in next 3 bits
  * It uses BCD notation so the number 3 is 0011 and the number for is 100 so the final
  * byte is 0 (ignored bit) 100 (the 4) 0011 (the 3) -> 0100001
- * Luckily, zephyr provides a couple of functions to do exactlly this: bin2bcd and bcd2bin,
+ * Luckily, zephyr provides a couple of functions to do exactly this: bin2bcd and bcd2bin,
  * but we will take care about the bits marked as non used in
  * the datasheet because they may contain unexpected values. Applying a mask will help us
  * to sanitize the read values
@@ -133,7 +133,7 @@ static int pcf8563_set_time(const struct device *dev, const struct rtc_time *tim
 	raw_time[5] = timeptr->tm_wday;
 
 	/*Set month */
-	raw_time[6] = bin2bcd(timeptr->tm_mon);
+	raw_time[6] = bin2bcd(timeptr->tm_mon + 1);
 
 	/* Set year */
 	raw_time[7] = bin2bcd(timeptr->tm_year % 100);
@@ -186,7 +186,7 @@ static int pcf8563_get_time(const struct device *dev, struct rtc_time *timeptr)
 	timeptr->tm_wday = raw_time[4] & PCF8563_WEEKDAYS_MASK;
 
 	/* Get month */
-	timeptr->tm_mon = bcd2bin(raw_time[5] & PCF8563_MONTHS_MASK);
+	timeptr->tm_mon = bcd2bin(raw_time[5] & PCF8563_MONTHS_MASK) - 1;
 
 	/* Get year */
 	timeptr->tm_year = bcd2bin(raw_time[6]);

@@ -62,6 +62,25 @@
 #endif
 
 /*
+ * Assembler directives to emit into a section other than the current one and
+ * then restore it, for use from inline assembly.
+ *
+ * Example:
+ *
+ *    __asm__(PUSHSECTION_DIRECTIVE " .my_section,\"\"\n\t"
+ *            ".asciz \"payload\"\n\t"
+ *            POPSECTION_DIRECTIVE);
+ */
+#if defined(CONFIG_ARC) && defined(__CCAC__)
+/* The ARC MWDT assembler spells these differently. */
+  #define PUSHSECTION_DIRECTIVE ".pushsect"
+  #define POPSECTION_DIRECTIVE  ".popsect"
+#else
+  #define PUSHSECTION_DIRECTIVE ".pushsection"
+  #define POPSECTION_DIRECTIVE  ".popsection"
+#endif
+
+/*
  * General directive for assembly code, to align the following symbol, in bytes.
  *
  * Example:
@@ -76,15 +95,17 @@
 
   #if defined(CONFIG_X86) || defined(CONFIG_ARM) || defined(CONFIG_ARM64) || \
 	defined(CONFIG_RISCV) || defined(CONFIG_XTENSA) || defined(CONFIG_MIPS) || \
-	defined(CONFIG_ARCH_POSIX) || defined(CONFIG_RX)
+	defined(CONFIG_ARCH_POSIX) || defined(CONFIG_RX) || defined(CONFIG_OPENRISC)
     #define   ALIGN(x)    .balign   x
   #elif defined(CONFIG_ARC)
     /* .align assembler directive is supported by all ARC toolchains and it is
      * implemented in the same way across ARC toolchains.
      */
     #define   ALIGN(x)    .align    x
-  #elif defined(CONFIG_SPARC)
+  #elif defined(CONFIG_SPARC) || defined(CONFIG_TRICORE)
     #define   ALIGN(x)    .align    x
+  #elif defined(CONFIG_HEXAGON)
+    #define   ALIGN(x)    .balign   x
   #else
     #error Architecture unsupported
   #endif
@@ -118,14 +139,19 @@
     #define PERFOPT_ALIGN .align  4
 
   #elif defined(CONFIG_RISCV) ||  defined(CONFIG_XTENSA) || \
-	  defined(CONFIG_MIPS) || defined(CONFIG_RX)
+	  defined(CONFIG_MIPS) || defined(CONFIG_RX) || \
+	  defined(CONFIG_OPENRISC)
     #define PERFOPT_ALIGN .balign 4
 
   #elif defined(CONFIG_ARCH_POSIX)
 
-  #elif defined(CONFIG_SPARC)
+  #elif defined(CONFIG_SPARC) || defined(CONFIG_TRICORE)
 
     #define PERFOPT_ALIGN .align  4
+
+  #elif defined(CONFIG_HEXAGON)
+
+    #define PERFOPT_ALIGN .balign 4
 
   #else
 

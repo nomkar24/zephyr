@@ -66,94 +66,12 @@ static struct bt_le_oob oob_sc_remote = { 0 };
 #define REJECT_LATENCY 0x0000
 #define REJECT_SUPERVISION_TIMEOUT 0x0C80
 
-/**
- * Used to store CAR support status of bonded peer devices not every connected peer.
- * So it is sufficient to have storage enough for CONFIG_BT_MAX_PAIRED.
- * CAR status is only requested from peers that are bonded, because GATT CARR read is
- * triggered in auth_pairing_complete callback.
- * Thus GATT read callback calls add_to_peers_with_car and bond_deleted callback resets the
- * CAR status when bond is deleted.
- */
-static struct {
-	bt_addr_le_t addr;
-	bool supported;
-} peers_with_car[CONFIG_BT_MAX_PAIRED];
-
-static void add_to_peers_with_car(const bt_addr_le_t *addr, bool supported)
-{
-	/* Check if the peer is already in the list, update the supported state */
-	for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
-		if (bt_addr_le_eq(addr, &peers_with_car[i].addr)) {
-			peers_with_car[i].supported = supported;
-			return;
-		}
-	}
-
-	/* If the peer is not in the list, add it */
-	for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
-		if (bt_addr_le_eq(&peers_with_car[i].addr, &bt_addr_le_any)) {
-			peers_with_car[i].supported = supported;
-			bt_addr_le_copy(&peers_with_car[i].addr, addr);
-			return;
-		}
-	}
-}
-
-static uint8_t read_car_cb(struct bt_conn *conn, uint8_t err,
-			  struct bt_gatt_read_params *params, const void *data,
-			  uint16_t length)
-{
-	struct btp_gap_peer_car_status_ev ev;
-	struct bt_conn_info info;
-	bool supported = false;
-
-	ev.car = 0x00;
-
-	if (!err && data && length == 1) {
-		const uint8_t *tmp = data;
-
-		/* only 0 or 1 are valid values */
-		if (tmp[0] == 1) {
-			supported = true;
-			ev.car = 0x01;
-		}
-	}
-
-	bt_conn_get_info(conn, &info);
-
-	add_to_peers_with_car(info.le.dst, supported);
-
-	bt_addr_le_copy(&ev.address, info.le.dst);
-	tester_event(BTP_SERVICE_ID_GAP, BTP_GAP_EV_PEER_CAR_RECEIVED, &ev, sizeof(ev));
-
-	return BT_GATT_ITER_STOP;
-}
-
-static struct bt_gatt_read_params read_car_params = {
-	.func = read_car_cb,
-	.by_uuid.uuid = BT_UUID_CENTRAL_ADDR_RES,
-	.by_uuid.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE,
-	.by_uuid.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE,
-};
-
 static void le_connected(struct bt_conn *conn, uint8_t err)
 {
 	struct btp_gap_device_connected_ev ev;
-	char addr_str[BT_ADDR_LE_STR_LEN];
 	struct bt_conn_info info;
 
-	(void)memset(addr_str, 0, sizeof(addr_str));
-
-	if (bt_conn_is_type(conn, BT_CONN_TYPE_LE)) {
-		(void)bt_addr_le_to_str(bt_conn_get_dst(conn), addr_str, sizeof(addr_str));
-	} else if (IS_ENABLED(CONFIG_BT_CLASSIC) && bt_conn_is_type(conn, BT_CONN_TYPE_BR)) {
-		(void)bt_addr_to_str(bt_conn_get_dst_br(conn), addr_str, sizeof(addr_str));
-	} else {
-		LOG_WRN("Unsupported transport");
-		return;
-	}
-
-	LOG_DBG("%s: 0x%02x", addr_str, err);
+	LOG_DBG("%s: 0x%02x", bt_conn_dst_str(conn), err);
 
 	if (err) {
 		return;
@@ -187,27 +105,18 @@ static void le_connected(struct bt_conn *conn, uint8_t err)
 static void le_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	struct btp_gap_device_disconnected_ev ev;
-	char addr_str[BT_ADDR_LE_STR_LEN];
 
 	if (bt_conn_is_type(conn, BT_CONN_TYPE_LE)) {
-		const bt_addr_le_t *addr;
-
-		addr = bt_conn_get_dst(conn);
-		(void)bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-		bt_addr_le_copy(&ev.address, addr);
+		bt_addr_le_copy(&ev.address, bt_conn_get_dst(conn));
 	} else if (IS_ENABLED(CONFIG_BT_CLASSIC) && bt_conn_is_type(conn, BT_CONN_TYPE_BR)) {
-		const bt_addr_t *br_addr;
-
-		br_addr = bt_conn_get_dst_br(conn);
-		(void)bt_addr_to_str(br_addr, addr_str, sizeof(addr_str));
 		ev.address.type = BTP_BR_ADDRESS_TYPE;
-		bt_addr_copy(&ev.address.a, br_addr);
+		bt_addr_copy(&ev.address.a, bt_conn_get_dst_br(conn));
 	} else {
 		LOG_WRN("Unsupported transport");
 		return;
 	}
 
-	LOG_DBG("%s: 0x%02x", addr_str, reason);
+	LOG_DBG("%s: 0x%02x", bt_conn_dst_str(conn), reason);
 
 	tester_event(BTP_SERVICE_ID_GAP, BTP_GAP_EV_DEVICE_DISCONNECTED, &ev, sizeof(ev));
 }
@@ -426,10 +335,6 @@ static void oob_data_request(struct bt_conn *conn,
 		return;
 	}
 
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info.le.dst, addr, sizeof(addr));
-
 	switch (oob_info->type) {
 	case BT_CONN_OOB_LE_SC:
 	{
@@ -440,7 +345,7 @@ static void oob_data_request(struct bt_conn *conn,
 
 		LOG_DBG("Set %s OOB SC data for %s, ",
 			oob_config_str(oob_info->lesc.oob_config),
-			addr);
+			bt_addr_le_str(info.le.dst));
 
 		struct bt_le_oob_sc_data *oobd_local =
 			oob_info->lesc.oob_config != BT_CONN_OOB_REMOTE_ONLY ?
@@ -461,9 +366,8 @@ static void oob_data_request(struct bt_conn *conn,
 
 		if (oobd_local &&
 		    !bt_addr_le_eq(info.le.local, &oob_sc_local.addr)) {
-			bt_addr_le_to_str(info.le.local, addr, sizeof(addr));
 			LOG_DBG("No OOB data available for local %s",
-				addr);
+				bt_addr_le_str(info.le.local));
 			bt_conn_auth_cancel(conn);
 			return;
 		}
@@ -482,7 +386,8 @@ static void oob_data_request(struct bt_conn *conn,
 			break;
 		}
 
-		LOG_DBG("Legacy OOB TK requested from remote %s", addr);
+		LOG_DBG("Legacy OOB TK requested from remote %s",
+			bt_addr_le_str(info.le.dst));
 
 		err = bt_le_oob_set_legacy_tk(conn, oob_legacy_tk);
 		if (err < 0) {
@@ -859,14 +764,7 @@ int tester_gap_create_adv_instance(struct bt_le_adv_param *param,
 		}
 		break;
 	case BTP_GAP_ADDR_TYPE_NON_RESOLVABLE_PRIVATE:
-		if (!IS_ENABLED(CONFIG_BT_PRIVACY)) {
-			return -EINVAL;
-		}
-
-		/* NRPA is used only for non-connectable advertising */
-		if (atomic_test_bit(&current_settings, BTP_GAP_SETTINGS_CONNECTABLE)) {
-			return -EINVAL;
-		}
+		param->options |= BT_LE_ADV_OPT_USE_NRPA;
 		break;
 	default:
 		return -EINVAL;
@@ -999,8 +897,8 @@ static uint8_t start_advertising(const void *cmd, uint16_t cmd_len,
 
 /**
  * Start directed advertising with a peer address with or without RPA.
- * If privacy is enabled and the peer does not support Central Address Resolution,
- * the advertisement will be started as undirected with RPA.
+ * If privacy is enabled and the peer does not support Central Address
+ * Resolution PTS expects IUT request to fail.
  */
 static uint8_t start_directed_advertising(const void *cmd, uint16_t cmd_len,
 					  void *rsp, uint16_t *rsp_len)
@@ -1016,29 +914,35 @@ static uint8_t start_directed_advertising(const void *cmd, uint16_t cmd_len,
 		return BTP_STATUS_FAILED;
 	}
 
-	if (IS_ENABLED(CONFIG_BT_PRIVACY) && (options & BTP_GAP_START_DIRECTED_ADV_PEER_RPA)) {
-		/**
-		 * In accordance with the test spec for test case GAP/CONN/DCON/BV-05-C, if the peer
-		 * does not support Central Address Resolution, the advertisement will be started
-		 * as undirected.
-		 */
-		for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
-			if (bt_addr_le_eq(&cp->address, &peers_with_car[i].addr) &&
-			    peers_with_car[i].supported) {
-				adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
-				adv_param.peer = &cp->address;
-				if ((options & BTP_GAP_START_DIRECTED_ADV_HD) == 0U) {
-					adv_param.options |= BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY;
-				}
-				break;
-			}
+	/*
+	 * For GAP/CONN/DCON/BV-05-C PTS expects IUT to fail operation
+	 * if the peer does not support Central Address Resolution.
+	 *
+	 * In Test Set there is ALT to start undirected advertising instead
+	 * but PTS interpretation is that IUT shall reject directed request
+	 * regardless and may then later on follow up with underected
+	 * advertising (which PTS doesn't validate). To keep this simple
+	 * just reject here.
+	 */
+	if ((options & BTP_GAP_START_DIRECTED_ADV_PEER_RPA) != 0U) {
+		if (!IS_ENABLED(CONFIG_BT_PRIVACY)) {
+			return BTP_STATUS_FAILED;
 		}
-	} else {
-		adv_param.peer = &cp->address;
-		if ((options & BTP_GAP_START_DIRECTED_ADV_HD) == 0U) {
-			adv_param.options |= BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY;
+
+		if (bt_le_bond_addr_res_support(BT_ID_DEFAULT, &cp->address) !=
+		    BT_LE_ADDR_RES_SUPPORT_YES) {
+			LOG_WRN("Peer doesn't support CAR");
+			return BTP_STATUS_FAILED;
 		}
+
+		adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
 	}
+
+	if ((options & BTP_GAP_START_DIRECTED_ADV_HD) == 0U) {
+		adv_param.options |= BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY;
+	}
+
+	adv_param.peer = &cp->address;
 
 	if (bt_le_adv_start(&adv_param, NULL, 0, NULL, 0) < 0) {
 		LOG_ERR("Failed to start advertising");
@@ -1613,29 +1517,19 @@ void auth_pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 	tester_event(BTP_SERVICE_ID_GAP, BTP_GAP_EV_PAIRING_FAILED, &ev, sizeof(ev));
 }
 
-static void auth_pairing_complete(struct bt_conn *conn, bool bonded)
+static void addr_res_support_read(struct bt_conn *conn, enum bt_le_addr_res_support support)
 {
-	if (IS_ENABLED(CONFIG_BT_PRIVACY) && bonded) {
-		/* Read peer's Central Address Resolution if bonded */
-		bt_gatt_read(conn, &read_car_params);
-	}
-}
+	struct btp_gap_peer_car_status_ev ev;
 
-static void bond_deleted(uint8_t id, const bt_addr_le_t *peer)
-{
-	for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
-		if (bt_addr_le_eq(peer, &peers_with_car[i].addr)) {
-			peers_with_car[i].supported = false;
-			bt_addr_le_copy(&peers_with_car[i].addr, &bt_addr_le_any);
-			return;
-		}
-	}
+	bt_addr_le_copy(&ev.address, bt_conn_get_dst(conn));
+	ev.car = (support == BT_LE_ADDR_RES_SUPPORT_YES) ? 0x01 : 0x00;
+
+	tester_event(BTP_SERVICE_ID_GAP, BTP_GAP_EV_PEER_CAR_RECEIVED, &ev, sizeof(ev));
 }
 
 static struct bt_conn_auth_info_cb auth_info_cb = {
 	.pairing_failed = auth_pairing_failed,
-	.pairing_complete = auth_pairing_complete,
-	.bond_deleted = bond_deleted,
+	.addr_res_support_read = addr_res_support_read,
 };
 
 #if defined(CONFIG_BT_CLASSIC)
@@ -1732,7 +1626,7 @@ static uint8_t pair(const void *cmd, uint16_t cmd_len,
 
 	err = bt_conn_set_security(conn, BT_SECURITY_L2);
 	/*
-	 * If the error code is `-EBUSY`, it means the pairing/enryption is ongoing.
+	 * If the error code is `-EBUSY`, it means the pairing/encryption is ongoing.
 	 * Just ignore the error.
 	 */
 	if ((err < 0) && (err != -EBUSY)) {
@@ -1754,7 +1648,7 @@ static uint8_t pair_v2(const void *cmd, uint16_t cmd_len, void *rsp, uint16_t *r
 
 	/* TODO: Only supports mode 4 */
 	if ((cp->mode != BTP_GAP_PAIR_V2_MODE_4) && (cp->mode != BTP_GAP_PAIR_V2_MODE_ANY)) {
-		LOG_WRN("Unsupport mode %d", cp->mode);
+		LOG_WRN("Unsupported mode %d", cp->mode);
 		return BTP_STATUS_FAILED;
 	}
 
@@ -2242,6 +2136,41 @@ static uint8_t padv_configure(const void *cmd, uint16_t cmd_len,
 
 	return BTP_STATUS_SUCCESS;
 }
+
+#if defined(CONFIG_BT_PER_ADV_RSP)
+static uint8_t pawr_configure(const void *cmd, uint16_t cmd_len, void *rsp, uint16_t *rsp_len)
+{
+	uint32_t options = BT_LE_PER_ADV_OPT_NONE;
+	const struct btp_gap_pawr_configure_cmd *cp = cmd;
+	struct btp_gap_padv_configure_rp *rp = rsp;
+
+	if ((cp->flags & BTP_GAP_PADV_INCLUDE_TX_POWER) != 0) {
+		options |= BT_LE_PER_ADV_OPT_USE_TX_POWER;
+	}
+
+	struct bt_le_ext_adv *ext_adv = tester_gap_ext_adv_get(0);
+	struct bt_le_per_adv_param param = {
+		.interval_min = sys_le16_to_cpu(cp->interval_min),
+		.interval_max = sys_le16_to_cpu(cp->interval_max),
+		.options = options,
+		.num_subevents = cp->num_subevents,
+		.subevent_interval = cp->subevent_interval,
+		.response_slot_delay = cp->response_slot_delay,
+		.response_slot_spacing = cp->response_slot_spacing,
+		.num_response_slots = cp->num_response_slots,
+	};
+
+	if (tester_gap_padv_configure(ext_adv, &param) != 0) {
+		return BTP_STATUS_FAILED;
+	}
+
+	rp->current_settings = sys_cpu_to_le32(current_settings);
+
+	*rsp_len = sizeof(*rp);
+
+	return BTP_STATUS_SUCCESS;
+}
+#endif /* CONFIG_BT_PER_ADV_RSP */
 
 int tester_gap_padv_start(struct bt_le_ext_adv *ext_adv)
 {
@@ -2745,6 +2674,7 @@ static void iso_broadcaster_connected(struct bt_iso_chan *chan)
 	};
 	struct btp_gap_bis_data_path_setup_ev ev;
 	struct bt_le_ext_adv *ext_adv = tester_gap_ext_adv_get(0);
+	struct bt_le_ext_adv_info info;
 
 	err = bt_iso_chan_get_index(chan);
 	if (err < 0) {
@@ -2762,7 +2692,13 @@ static void iso_broadcaster_connected(struct bt_iso_chan *chan)
 		return;
 	}
 
-	bt_addr_le_copy(&ev.address, &ext_adv->random_addr);
+	err = bt_le_ext_adv_get_info(ext_adv, &info);
+	if (err != 0) {
+		LOG_ERR("Failed to get advertising set info: %d", err);
+		return;
+	}
+
+	bt_addr_le_copy(&ev.address, info.addr);
 
 	tester_event(BTP_SERVICE_ID_GAP, BTP_GAP_EV_BIS_DATA_PATH_SETUP, &ev, sizeof(ev));
 }
@@ -3075,6 +3011,36 @@ static uint8_t ead_decrypt_data(const void *cmd, uint16_t cmd_len, void *rsp, ui
 }
 #endif /* defined(CONFIG_BT_EAD) */
 
+#if defined(CONFIG_BT_SUBRATING)
+static uint8_t send_subrate_request(const void *cmd, uint16_t cmd_len, void *rsp, uint16_t *rsp_len)
+{
+	const struct btp_gap_send_subrate_request_cmd *cp = cmd;
+	struct bt_conn *conn;
+
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
+	if (conn == NULL) {
+		return BTP_STATUS_FAILED;
+	}
+
+	struct bt_conn_le_subrate_param param = {
+		.subrate_min = sys_le16_to_cpu(cp->subrate_min),
+		.subrate_max = sys_le16_to_cpu(cp->subrate_max),
+		.max_latency = sys_le16_to_cpu(cp->max_latency),
+		.continuation_number = sys_le16_to_cpu(cp->continuation_number),
+		.supervision_timeout = sys_le16_to_cpu(cp->supervision_timeout),
+	};
+
+	int err = bt_conn_le_subrate_request(conn, &param);
+
+	if (err != 0) {
+		LOG_ERR("Failed to send subrate request: %d", err);
+		return BTP_STATUS_FAILED;
+	}
+
+	return BTP_STATUS_SUCCESS;
+}
+#endif /* defined(CONFIG_BT_SUBRATING) */
+
 static const struct btp_handler handlers[] = {
 	{
 		.opcode = BTP_GAP_READ_SUPPORTED_COMMANDS,
@@ -3266,6 +3232,13 @@ static const struct btp_handler handlers[] = {
 		.func = padv_padv_sync_transfer_recv,
 	},
 #endif /* defined(CONFIG_BT_PER_ADV_SYNC_TRANSFER_RECEIVER) */
+#if defined(CONFIG_BT_PER_ADV_RSP)
+	{
+		.opcode = BTP_GAP_PAWR_CONFIGURE,
+		.expect_len = sizeof(struct btp_gap_pawr_configure_cmd),
+		.func = pawr_configure,
+	},
+#endif /* defined(CONFIG_BT_PER_ADV_RSP) */
 #endif /* defined(CONFIG_BT_PER_ADV) */
 #endif /* defined(CONFIG_BT_EXT_ADV) */
 #if defined(CONFIG_BT_RPA_TIMEOUT_DYNAMIC)
@@ -3275,6 +3248,13 @@ static const struct btp_handler handlers[] = {
 		.func = set_rpa_timeout,
 	},
 #endif /* defined(CONFIG_BT_RPA_TIMEOUT_DYNAMIC) */
+#if defined(CONFIG_BT_SUBRATING)
+	{
+		.opcode = BTP_GAP_SEND_SUBRATE_REQUEST,
+		.expect_len = sizeof(struct btp_gap_send_subrate_request_cmd),
+		.func = send_subrate_request,
+	},
+#endif /* defined(CONFIG_BT_SUBRATING) */
 #if defined(CONFIG_BT_ISO_SYNC_RECEIVER)
 	{
 		.opcode = BTP_GAP_BIG_CREATE_SYNC,

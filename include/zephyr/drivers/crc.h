@@ -25,6 +25,8 @@ extern "C" {
 /**
  * @brief Interfaces for Cyclic Redundancy Check (CRC) devices.
  * @defgroup crc_interface CRC driver APIs
+ * @since 4.3
+ * @version 0.1.0
  * @ingroup io_interfaces
  * @{
  */
@@ -96,6 +98,9 @@ extern "C" {
 /** CRC32_K_4_2 initial value */
 #define CRC32_K_4_2_INIT_VAL 0xFFFFFFFFU
 
+/** CRC32_MPEG2 initial value */
+#define CRC32_MPEG2_INIT_VAL 0xFFFFFFFFU
+
 /** @endcond */
 
 /**
@@ -149,29 +154,46 @@ struct crc_ctx {
 };
 
 /**
- * @brief Callback API upon CRC calculation begin
- * See @a crc_begin() for argument description
+ * @def_driverbackendgroup{CRC,crc_interface}
+ * @ingroup crc_interface
+ * @{
+ */
+
+/**
+ * @brief Callback API to configure the CRC unit for calculation.
+ *
+ * See @a crc_begin() for argument description.
  */
 typedef int (*crc_api_begin)(const struct device *dev, struct crc_ctx *ctx);
 
 /**
- * @brief Callback API upon CRC calculation stream update
- * See @a crc_update() for argument description
+ * @brief Callback API to feed data into an in-progress CRC calculation.
+ *
+ * See @a crc_update() for argument description.
  */
 typedef int (*crc_api_update)(const struct device *dev, struct crc_ctx *ctx, const void *buffer,
 			      size_t bufsize);
 
 /**
- * @brief Callback API upon CRC calculation finish
- * See @a crc_finish() for argument description
+ * @brief Callback API to finalize CRC calculation.
+ *
+ * See @a crc_finish() for argument description.
  */
 typedef int (*crc_api_finish)(const struct device *dev, struct crc_ctx *ctx);
 
+/**
+ * @driver_ops{CRC}
+ */
 __subsystem struct crc_driver_api {
+	/** @driver_ops_optional @copybrief crc_begin */
 	crc_api_begin begin;
+	/** @driver_ops_optional @copybrief crc_update */
 	crc_api_update update;
+	/** @driver_ops_optional @copybrief crc_finish */
 	crc_api_finish finish;
 };
+
+/** @} */
 
 /**
  * @brief  Configure CRC unit for calculation
@@ -187,7 +209,7 @@ __syscall int crc_begin(const struct device *dev, struct crc_ctx *ctx);
 
 static inline int z_impl_crc_begin(const struct device *dev, struct crc_ctx *ctx)
 {
-	const struct crc_driver_api *api = (const struct crc_driver_api *)dev->api;
+	const struct crc_driver_api *api = DEVICE_API_GET(crc, dev);
 
 	if (api->begin == NULL) {
 		return -ENOSYS;
@@ -214,7 +236,7 @@ __syscall int crc_update(const struct device *dev, struct crc_ctx *ctx, const vo
 static inline int z_impl_crc_update(const struct device *dev, struct crc_ctx *ctx,
 				    const void *buffer, size_t bufsize)
 {
-	const struct crc_driver_api *api = (const struct crc_driver_api *)dev->api;
+	const struct crc_driver_api *api = DEVICE_API_GET(crc, dev);
 
 	if (api->update == NULL) {
 		return -ENOSYS;
@@ -237,7 +259,7 @@ __syscall int crc_finish(const struct device *dev, struct crc_ctx *ctx);
 
 static inline int z_impl_crc_finish(const struct device *dev, struct crc_ctx *ctx)
 {
-	const struct crc_driver_api *api = (const struct crc_driver_api *)dev->api;
+	const struct crc_driver_api *api = DEVICE_API_GET(crc, dev);
 
 	if (api->finish == NULL) {
 		return -ENOSYS;

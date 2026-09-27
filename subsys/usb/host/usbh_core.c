@@ -12,7 +12,6 @@
 #include <zephyr/usb/usbh.h>
 
 #include "usbh_class.h"
-#include "usbh_class_api.h"
 #include "usbh_device.h"
 #include "usbh_internal.h"
 
@@ -25,11 +24,8 @@ static struct k_thread usbh_thread_data;
 static K_KERNEL_STACK_DEFINE(usbh_bus_stack, CONFIG_USBH_STACK_SIZE);
 static struct k_thread usbh_bus_thread_data;
 
-K_MSGQ_DEFINE(usbh_msgq, sizeof(struct uhc_event),
-	      CONFIG_USBH_MAX_UHC_MSG, sizeof(uint32_t));
-
-K_MSGQ_DEFINE(usbh_bus_msgq, sizeof(struct uhc_event),
-	      CONFIG_USBH_MAX_UHC_MSG, sizeof(uint32_t));
+K_MSGQ_DEFINE_STATIC_TYPE(usbh_msgq, struct uhc_event, CONFIG_USBH_MAX_UHC_MSG);
+K_MSGQ_DEFINE_STATIC_TYPE(usbh_bus_msgq, struct uhc_event, CONFIG_USBH_MAX_UHC_MSG);
 
 static int usbh_event_carrier(const struct device *dev,
 			      const struct uhc_event *const event)
@@ -48,41 +44,40 @@ static int usbh_event_carrier(const struct device *dev,
 static void dev_connected_handler(struct usbh_context *const ctx,
 				  const struct uhc_event *const event)
 {
-	LOG_DBG("Device connected event");
-	if (ctx->root != NULL) {
-		LOG_ERR("Device already connected");
-		usbh_device_free(ctx->root);
-		ctx->root = NULL;
-	}
+	struct usb_device *udev;
 
-	ctx->root = usbh_device_alloc(ctx);
-	if (ctx->root == NULL) {
+	udev = usbh_device_alloc(ctx);
+
+	if (udev == NULL) {
 		LOG_ERR("Failed allocate new device");
 		return;
 	}
 
-	ctx->root->state = USB_STATE_DEFAULT;
-
-	if (event->type == UHC_EVT_DEV_CONNECTED_HS) {
-		ctx->root->speed = USB_SPEED_SPEED_HS;
-	} else {
-		ctx->root->speed = USB_SPEED_SPEED_FS;
+	switch (event->type) {
+	case UHC_EVT_DEV_CONNECTED_HS:
+		udev->speed = USB_SPEED_SPEED_HS;
+		break;
+	case UHC_EVT_DEV_CONNECTED_FS:
+		udev->speed = USB_SPEED_SPEED_FS;
+		break;
+	case UHC_EVT_DEV_CONNECTED_LS:
+		udev->speed = USB_SPEED_SPEED_LS;
+		break;
+	default:
+		LOG_ERR("USB device speed not supported");
+		return;
 	}
 
-	if (usbh_device_init(ctx->root)) {
-		LOG_ERR("Failed to reset new USB device");
-	}
-
-	usbh_class_probe_device(ctx->root);
+	usbh_device_connect(ctx, udev);
 }
 
 static void dev_removed_handler(struct usbh_context *const ctx)
 {
-	if (ctx->root != NULL) {
-		usbh_class_remove_all(ctx->root);
-		usbh_device_free(ctx->root);
-		ctx->root = NULL;
-		LOG_DBG("Device removed");
+	struct usb_device *udev = NULL;
+
+	udev = usbh_device_get_root(ctx);
+	if (udev != NULL) {
+		usbh_device_disconnect(ctx, udev);
 	} else {
 		LOG_DBG("Spurious device removed event");
 	}
@@ -108,8 +103,6 @@ static ALWAYS_INLINE int usbh_event_handler(struct usbh_context *const ctx,
 
 	switch (event->type) {
 	case UHC_EVT_DEV_CONNECTED_LS:
-		LOG_ERR("Low speed device not supported (connected event)");
-		break;
 	case UHC_EVT_DEV_CONNECTED_FS:
 	case UHC_EVT_DEV_CONNECTED_HS:
 		dev_connected_handler(ctx, event);

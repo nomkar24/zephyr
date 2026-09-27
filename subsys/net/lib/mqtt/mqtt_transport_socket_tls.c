@@ -15,6 +15,7 @@ LOG_MODULE_REGISTER(net_mqtt_sock_tls, CONFIG_MQTT_LOG_LEVEL);
 #include <errno.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/mqtt.h>
+#include <zephyr/net/net_log.h>
 
 #include "mqtt_os.h"
 
@@ -66,7 +67,7 @@ int mqtt_client_tls_connect(struct mqtt_client *client)
 	if (client->transport.proxy.addrlen != 0) {
 		ret = setsockopt(client->transport.tls.sock,
 				 ZSOCK_SOL_SOCKET, ZSOCK_SO_SOCKS5,
-				 &client->transport.proxy.addr,
+				 net_sad(&client->transport.proxy.addr_storage),
 				 client->transport.proxy.addrlen);
 		if (ret < 0) {
 			goto error;

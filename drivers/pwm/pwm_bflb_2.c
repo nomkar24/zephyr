@@ -171,9 +171,12 @@ static int pwm_bflb_init(const struct device *dev)
 		return err;
 	}
 
+#ifndef CONFIG_SOC_SERIES_BL70XL
+	/* Always set to single ended mode */
 	tmp = sys_read32(GLB_BASE + GLB_PWM_CFG0_OFFSET);
 	tmp &= GLB_REG_PWM1_IO_SEL_UMSK;
 	sys_write32(tmp, GLB_BASE + GLB_PWM_CFG0_OFFSET);
+#endif
 
 	tmp = sys_read32(cfg->base + PWM_MC0_CONFIG0_OFFSET);
 	tmp &= ~PWM_REG_CLK_SEL_MASK;
@@ -181,6 +184,11 @@ static int pwm_bflb_init(const struct device *dev)
 	tmp |= 1U << PWM_REG_CLK_SEL_SHIFT;
 	/* Dont wait for period end */
 	tmp &= ~PWM_STOP_MODE;
+#if defined(CONFIG_SOC_SERIES_BL616CL)
+	tmp &= ~PWM_CENTER_ALIGNED_EN;
+	tmp &= ~PWM_UPDATE_DISABLE;
+	tmp &= ~PWM_UPDATE_GENERATE;
+#endif
 	sys_write32(tmp, cfg->base + PWM_MC0_CONFIG0_OFFSET);
 
 	return 0;

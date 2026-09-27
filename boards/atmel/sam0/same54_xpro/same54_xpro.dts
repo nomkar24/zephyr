@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Benjamin Valentin
  * # Copyright (c) 2024-2025 Gerson Fernando Budke <nandojve@gmail.com>
+ * Copyright (c) 2026 Microchip Technology Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -142,15 +143,20 @@
 
 &dac0 {
 	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	reference = "intref";
 
-	channel_0 {
+	channel@0 {
+		reg = <0>;
 		oversampling = "OSR_1";
 		refresh-period = <1>;
 		current-control = "CC1M";
 	};
 
-	channel_1 {
+	channel@1 {
+		reg = <1>;
 		oversampling = "OSR_1";
 		refresh-period = <1>;
 		current-control = "CC1M";
@@ -193,9 +199,9 @@ zephyr_udc0: &usb0 {
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
 		/*
 		 * The final 16 KiB is reserved for the application.
@@ -203,6 +209,7 @@ zephyr_udc0: &usb0 {
 		 * if enabled.
 		 */
 		storage_partition: partition@fc000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
 			reg = <0x000fc000 0x00004000>;
 		};

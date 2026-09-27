@@ -6,6 +6,7 @@
 # pylint: disable=unexpected-keyword-arg
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import platform
@@ -17,7 +18,7 @@ from pathlib import Path
 import scl
 import yaml
 from natsort import natsorted
-from twisterlib.constants import ZEPHYR_BASE
+from twisterlib import ZEPHYR_BASE
 from twisterlib.hardwaredata import HardwareData
 
 try:
@@ -108,6 +109,7 @@ class HardwareMap:
         'NXP',
         'NXP Semiconductors',
         'Microchip Technology Inc.',
+        'Microchip Technology Incorporated',
         'FTDI',
         'Digilent',
         'Microsoft',
@@ -132,12 +134,20 @@ class HardwareMap:
         'dediprog': [
             'TTL232R-3V3',
             'MCP2200 USB Serial Port Emulator'
+        ],
+        'mplab_ipe': [
+            'MPLAB* PKoB 4',
+            'MPLAB* PICKit 5',
+            'MPLAB* PICKit Basic',
+            'MPLAB* SNAP ICD',
+            'MPLAB* ICD 5',
+            'MPLAB* ICE',
         ]
     }
 
-    def __init__(self, env=None):
+    def __init__(self, options: argparse.Namespace):
         self.duts: list[DUT] = []
-        self.options = env.options
+        self.options = options
 
     def discover(self):
 
@@ -257,12 +267,15 @@ class HardwareMap:
             else:
                 raise ValueError(f"Invalid platform value: {platform}")
             id = dut.get('id')
+            probe_id = dut.get('probe_id')
             runner = dut.get('runner')
+            base_params = dut.get('base_params')
             runner_params = dut.get('runner_params')
             serial = dut.get('serial')
             serial_baud = dut.get('serial_baud', None) or dut.get('baud', None)
             product = dut.get('product')
             fixtures = dut.get('fixtures', [])
+            run_with_fixture_only = dut.get('run_with_fixture_only', False)
             connected = dut.get('connected') and ((serial or serial_pty) is not None)
             west_flash_cmd = dut.get('west_flash_cmd', "")
             if not connected:
@@ -271,8 +284,10 @@ class HardwareMap:
                 new_dut = DUT(platform=plat,
                               product=product,
                               runner=runner,
+                              base_params=base_params,
                               runner_params=runner_params,
                               id=id,
+                              probe_id=probe_id,
                               serial_pty=serial_pty,
                               serial=serial,
                               serial_baud=serial_baud,
@@ -284,6 +299,7 @@ class HardwareMap:
                               script_param=script_param,
                               flash_timeout=flash_timeout,
                               flash_with_test=flash_with_test,
+                              run_with_fixture_only=run_with_fixture_only,
                               west_flash_cmd=west_flash_cmd)
                 new_dut.fixtures = fixtures
                 new_dut.counter = 0
@@ -339,6 +355,9 @@ class HardwareMap:
 
                 if d.product is None:
                     d.product = 'unknown'
+
+                if 'MPLAB' in d.product:
+                    d.product = 'MPLAB-TOOL'
 
                 s_dev = DUT(platform="unknown",
                                         id=d.serial_number,

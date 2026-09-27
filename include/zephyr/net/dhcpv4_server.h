@@ -12,7 +12,7 @@
 #define ZEPHYR_INCLUDE_NET_DHCPV4_SERVER_H_
 
 #include <zephyr/net/net_ip.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,8 +34,7 @@ struct net_if;
 #define DHCPV4_CLIENT_ID_MAX_SIZE 20
 
 /**
- * Max DHCP hardware address size is defined in RFC2131
- * https://www.rfc-editor.org/rfc/rfc2131
+ * Max DHCP hardware address size is defined in @rfc{2131}
  */
 #define DHCPV4_HARDWARE_ADDRESS_MAX_SIZE 16
 
@@ -114,6 +113,8 @@ typedef void (*net_dhcpv4_lease_cb_t)(struct net_if *iface,
  * @param iface Pointer to the network interface, can be NULL
  * @param cb User-supplied callback function to call
  * @param user_data User specified data
+ *
+ * @return 0 on success, a negative error code otherwise.
  */
 int net_dhcpv4_server_foreach_lease(struct net_if *iface,
 				    net_dhcpv4_lease_cb_t cb,
@@ -146,6 +147,34 @@ typedef int (*net_dhcpv4_server_provider_cb_t)(struct net_if *iface,
  */
 void net_dhcpv4_server_set_provider_cb(net_dhcpv4_server_provider_cb_t cb,
 				       void *user_data);
+
+/**
+ * @typedef net_dhcpv4_server_address_validator_cb_t
+ * @brief Callback used to let application accept or reject a proposed DHCP
+ * address
+ * @details This function is called before accepting an address to a client,
+ * and lets the application reject the address for a given client. If the
+ * callback returns 0, addr needs to be a valid address and will be assigned
+ * to the client. If the callback returns anything non-zero, the client will
+ * be assigned an address from the pool.
+ *
+ * @param iface Pointer to the network interface
+ * @param client_id Pointer to client requesting the address
+ * @param addr Address to be assigned to client
+ * @param user_data A valid pointer to user data or NULL
+ */
+typedef bool (*net_dhcpv4_server_address_validator_cb_t)(struct net_if *iface,
+							const struct dhcpv4_client_id *client_id,
+							const struct net_in_addr *addr,
+							void *user_data);
+/**
+ * @brief Set the callback used to validate new addresses to the DHCP server.
+ *
+ * @param cb User-supplied callback function to call
+ * @param user_data A valid pointer to user data or NULL
+ */
+void net_dhcpv4_server_set_address_validator_cb(net_dhcpv4_server_address_validator_cb_t cb,
+						void *user_data);
 
 /**
  * @}

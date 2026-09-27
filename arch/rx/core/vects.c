@@ -67,7 +67,7 @@ static ALWAYS_INLINE void REGISTER_RESTORE_EXIT(void)
 		"RTE\n");
 }
 
-/* Privileged instruction execption */
+/* Privileged instruction exception */
 static void __ISR__ INT_Excep_SuperVisorInst(void)
 {
 	REGISTER_SAVE();
@@ -135,7 +135,12 @@ static void __ISR__ Dummy(void)
 static ALWAYS_INLINE void handle_interrupt(uint8_t irq)
 {
 	ISR_DIRECT_HEADER();
+#if defined(CONFIG_GEN_SW_ISR_TABLE)
 	_sw_isr_table[irq].isr(_sw_isr_table[irq].arg);
+#else
+	ARG_UNUSED(irq);
+	z_irq_spurious(NULL);
+#endif
 	ISR_DIRECT_FOOTER(1);
 }
 

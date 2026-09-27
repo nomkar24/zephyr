@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from west.commands import WestCommand
 
+from fetchers.core import ZephyrBlobException
 from zephyr_ext_common import ZEPHYR_BASE
 
 sys.path.append(os.fspath(Path(__file__).parent.parent))
@@ -59,7 +60,7 @@ class Blobs(WestCommand):
             - license_path: path to the license file for the blob
             - license-abspath: absolute path to the license file for the blob
             - click-through: need license click-through or not
-            - url: URI to the remote location of the blob
+            - url: URI(s) to the remote location(s) of the blob
             - fetcher: method to use to fetch the blob
             - description: blob text description
             - doc-url: URL to the documentation for this blob
@@ -192,17 +193,50 @@ class Blobs(WestCommand):
         return None
 
     def download_blob(self, blob, path):
-        '''Download a blob from its url to a given path.'''
-        url = blob['url']
-        scheme = blob.get('fetcher') or urlparse(url).scheme
-        self.dbg(f'Fetching blob from url {url} with {scheme} to path: {path}')
-        import fetchers
+        '''Download a blob from its url to a given path.
 
-        fetcher = fetchers.get_fetcher_cls(scheme)
-        self.dbg(f'Found fetcher: {fetcher}')
-        inst = fetcher()
-        self.ensure_folder(path)
-        inst.fetch(self, blob, path)
+        Each URL is tried in order until one provides a download with a
+        matching checksum. A download whose checksum does not match is
+        treated like a failed download, as a server may respond with a
+        bogus payload and a success status.
+        '''
+        urls = blob['url']
+        if not isinstance(urls, list):
+            urls = (urls,)
+
+        downloaded = False
+        for i, url in enumerate(urls):
+            scheme = blob.get('fetcher') or urlparse(url).scheme
+            self.dbg(f'Fetching blob from url {url} with {scheme} to path: {path}')
+            import fetchers
+
+            fetcher_class = fetchers.get_fetcher_cls(scheme)
+            self.dbg(f'Found fetcher: {fetcher_class}')
+            fetcher = fetcher_class()
+            self.ensure_folder(path)
+
+            # Select an URL the fetcher will use
+            single_url_blob = blob.copy()
+            single_url_blob['url'] = url
+
+            try:
+                fetcher.fetch(self, single_url_blob, path)
+            except ZephyrBlobException as e:
+                self.wrn(e)
+                continue
+
+            downloaded = True
+            if zephyr_module.get_blob_status(path, blob['sha256']) == zephyr_module.BLOB_PRESENT:
+                if i > 0:
+                    self.inf(f'Fallback URL worked: {url}')
+                return
+            # Not necessarily an attack: a server can answer a raw file
+            # request with an HTML sign-in page and a 200 status.
+            self.wrn(f'Checksum mismatch for blob downloaded from {url}')
+
+        if not downloaded:
+            raise ZephyrBlobException('No URL worked for this blob')
+        # verify_blob() will report the detailed checksum error later.
 
     def fetch_blob(self, args, blob):
         """
@@ -273,6 +307,7 @@ class Blobs(WestCommand):
 
     def fetch(self, args):
         bad_checksum_count = 0
+        failed_fetch_count = 0
         blobs = self.get_blobs(args)
         for blob in blobs:
             if blob['status'] == zephyr_module.BLOB_PRESENT:
@@ -318,13 +353,21 @@ class Blobs(WestCommand):
                     self.wrn('Skip fetching this blob.')
                     continue
 
-            self.fetch_blob(args, blob)
-            if not self.verify_blob(blob):
-                bad_checksum_count += 1
+            try:
+                self.fetch_blob(args, blob)
+            except ZephyrBlobException as e:
+                self.err(f"Failed to fetch blob: {e}")
+                failed_fetch_count += 1
+            else:
+                if not self.verify_blob(blob):
+                    bad_checksum_count += 1
 
         if bad_checksum_count:
             self.err(f"{bad_checksum_count} blobs have bad checksums")
             sys.exit(os.EX_DATAERR)
+
+        if failed_fetch_count:
+            self.die(f"{failed_fetch_count} blobs failed to be fetched")
 
     def clean(self, args):
         blobs = self.get_blobs(args)

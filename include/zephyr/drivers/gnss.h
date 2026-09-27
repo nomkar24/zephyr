@@ -32,6 +32,16 @@
 extern "C" {
 #endif
 
+/** GNSS receiver start modes */
+enum gnss_start_mode {
+	/** Restart with all navigation data preserved (fastest TTFF) */
+	GNSS_HOT_START = 0,
+	/** Restart clearing ephemeris; almanac and position are retained */
+	GNSS_WARM_START = 1,
+	/** Restart clearing all navigation data (longest TTFF) */
+	GNSS_COLD_START = 2,
+};
+
 /** GNSS PPS modes */
 enum gnss_pps_mode {
 	/** PPS output disabled */
@@ -150,6 +160,12 @@ struct gnss_time {
  * @{
  */
 
+/** API for starting the GNSS receiver engine */
+typedef int (*gnss_start_t)(const struct device *dev, enum gnss_start_mode mode);
+
+/** API for stopping the GNSS receiver engine */
+typedef int (*gnss_stop_t)(const struct device *dev);
+
 /** API for setting fix rate */
 typedef int (*gnss_set_fix_rate_t)(const struct device *dev, uint32_t fix_interval_ms);
 
@@ -180,6 +196,14 @@ typedef int (*gnss_get_latest_timepulse_t)(const struct device *dev, k_ticks_t *
  * @driver_ops{GNSS}
  */
 __subsystem struct gnss_driver_api {
+	/**
+	 * @driver_ops_optional @copybrief gnss_start
+	 */
+	gnss_start_t start;
+	/**
+	 * @driver_ops_optional @copybrief gnss_stop
+	 */
+	gnss_stop_t stop;
 	/**
 	 * @driver_ops_optional @copybrief gnss_set_fix_rate
 	 */
@@ -270,6 +294,61 @@ struct gnss_satellites_callback {
 };
 
 /**
+ * @brief Start the GNSS receiver engine.
+ *
+ * Starts (or resumes) GNSS receiver engine.  @p mode controls which
+ * navigation data is preserved across the restart, trading time-to-first-fix
+ * against accuracy of the first few fixes.
+ *
+ * @param dev  Device instance
+ * @param mode Start mode: GNSS_HOT_START, GNSS_WARM_START, or GNSS_COLD_START
+ *
+ * @retval 0        Success
+ * @retval -ENOSYS  Driver does not support this function
+ * @retval -ENODEV  Device is not yet started (PM not resumed)
+ * @retval -EINVAL  Invalid mode
+ * @retval -errno   Other driver-specific error
+ */
+__syscall int gnss_start(const struct device *dev, enum gnss_start_mode mode);
+
+static inline int z_impl_gnss_start(const struct device *dev, enum gnss_start_mode mode)
+{
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
+
+	if (api->start == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->start(dev, mode);
+}
+
+/**
+ * @brief Stop the GNSS receiver engine.
+ *
+ * Instructs the receiver to halt position computation while keeping the
+ * communication link open.  Call gnss_start() to resume.
+ *
+ * @param dev Device instance
+ *
+ * @retval 0        Success
+ * @retval -ENOSYS  Driver does not support this function
+ * @retval -ENODEV  Device is not yet started (PM not resumed)
+ * @retval -errno   Other driver-specific error
+ */
+__syscall int gnss_stop(const struct device *dev);
+
+static inline int z_impl_gnss_stop(const struct device *dev)
+{
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
+
+	if (api->stop == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->stop(dev);
+}
+
+/**
  * @brief Set the GNSS fix rate
  *
  * @param dev Device instance
@@ -282,7 +361,7 @@ __syscall int gnss_set_fix_rate(const struct device *dev, uint32_t fix_interval_
 
 static inline int z_impl_gnss_set_fix_rate(const struct device *dev, uint32_t fix_interval_ms)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->set_fix_rate == NULL) {
 		return -ENOSYS;
@@ -304,7 +383,7 @@ __syscall int gnss_get_fix_rate(const struct device *dev, uint32_t *fix_interval
 
 static inline int z_impl_gnss_get_fix_rate(const struct device *dev, uint32_t *fix_interval_ms)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->get_fix_rate == NULL) {
 		return -ENOSYS;
@@ -328,7 +407,7 @@ __syscall int gnss_set_navigation_mode(const struct device *dev,
 static inline int z_impl_gnss_set_navigation_mode(const struct device *dev,
 						  enum gnss_navigation_mode mode)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->set_navigation_mode == NULL) {
 		return -ENOSYS;
@@ -352,7 +431,7 @@ __syscall int gnss_get_navigation_mode(const struct device *dev,
 static inline int z_impl_gnss_get_navigation_mode(const struct device *dev,
 						  enum gnss_navigation_mode *mode)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->get_navigation_mode == NULL) {
 		return -ENOSYS;
@@ -375,7 +454,7 @@ __syscall int gnss_set_enabled_systems(const struct device *dev, gnss_systems_t 
 static inline int z_impl_gnss_set_enabled_systems(const struct device *dev,
 						  gnss_systems_t systems)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->set_enabled_systems == NULL) {
 		return -ENOSYS;
@@ -398,7 +477,7 @@ __syscall int gnss_get_enabled_systems(const struct device *dev, gnss_systems_t 
 static inline int z_impl_gnss_get_enabled_systems(const struct device *dev,
 						  gnss_systems_t *systems)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->get_enabled_systems == NULL) {
 		return -ENOSYS;
@@ -421,7 +500,7 @@ __syscall int gnss_get_supported_systems(const struct device *dev, gnss_systems_
 static inline int z_impl_gnss_get_supported_systems(const struct device *dev,
 						    gnss_systems_t *systems)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->get_supported_systems == NULL) {
 		return -ENOSYS;
@@ -448,7 +527,7 @@ __syscall int gnss_get_latest_timepulse(const struct device *dev, k_ticks_t *tim
 static inline int z_impl_gnss_get_latest_timepulse(const struct device *dev,
 						    k_ticks_t *timestamp)
 {
-	const struct gnss_driver_api *api = (const struct gnss_driver_api *)dev->api;
+	const struct gnss_driver_api *api = DEVICE_API_GET(gnss, dev);
 
 	if (api->get_latest_timepulse == NULL) {
 		return -ENOSYS;
@@ -461,7 +540,7 @@ static inline int z_impl_gnss_get_latest_timepulse(const struct device *dev,
  * @brief Register a callback structure for GNSS data published
  *
  * @param _dev Device pointer
- * @param _callback The callback function
+ * @param _callback The callback function (see @ref gnss_data_callback_t)
  */
 #if CONFIG_GNSS
 #define GNSS_DATA_CALLBACK_DEFINE(_dev, _callback)                                              \
@@ -471,6 +550,12 @@ static inline int z_impl_gnss_get_latest_timepulse(const struct device *dev,
 		.callback = _callback,                                                          \
 	}
 
+/**
+ * @brief Register a callback structure for GNSS data published, by devicetree node.
+ *
+ * @param _node_id Devicetree node identifier of the GNSS device
+ * @param _callback The callback function (see @ref gnss_data_callback_t)
+ */
 #define GNSS_DT_DATA_CALLBACK_DEFINE(_node_id, _callback)                                          \
 	static const STRUCT_SECTION_ITERABLE(                                                      \
 		gnss_data_callback,                                                                \
@@ -487,7 +572,7 @@ static inline int z_impl_gnss_get_latest_timepulse(const struct device *dev,
  * @brief Register a callback structure for GNSS satellites published
  *
  * @param _dev Device pointer
- * @param _callback The callback function
+ * @param _callback The callback function (see @ref gnss_satellites_callback_t)
  */
 #if CONFIG_GNSS_SATELLITES
 #define GNSS_SATELLITES_CALLBACK_DEFINE(_dev, _callback)                                        \
@@ -497,6 +582,12 @@ static inline int z_impl_gnss_get_latest_timepulse(const struct device *dev,
 		.callback = _callback,                                                          \
 	}
 
+/**
+ * @brief Register a callback structure for GNSS satellites published, by devicetree node.
+ *
+ * @param _node_id Devicetree node identifier of the GNSS device
+ * @param _callback The callback function (see @ref gnss_satellites_callback_t)
+ */
 #define GNSS_DT_SATELLITES_CALLBACK_DEFINE(_node_id, _callback)                                    \
 	static const STRUCT_SECTION_ITERABLE(                                                      \
 		gnss_satellites_callback,                                                          \

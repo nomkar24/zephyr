@@ -320,17 +320,16 @@
 	 ? BIT(MIN(31, (dw2 & BIT_MASK(31)) - 3)) \
 	 : dw2 / 8)
 
-#define FLASH_SIZE(inst) \
+#define FLASH_SIZE_INST(inst) \
 	(DT_INST_NODE_HAS_PROP(inst, size) \
 	 ? DT_INST_PROP(inst, size) / 8 \
 	 : BFP_FLASH_SIZE(SFDP_DW(inst, sfdp_bfp, 2)))
 
 #define BFP_FLASH_PAGE_EXP(inst) SFDP_FIELD(inst, sfdp_bfp, 11, GENMASK(7, 4))
 
-#define FLASH_PAGE_SIZE(inst) \
-	(BFP_FLASH_PAGE_EXP(inst) \
-	 ? BIT(BFP_FLASH_PAGE_EXP(inst)) \
-	 : SPI_NOR_PAGE_SIZE)
+#define FLASH_PAGE_SIZE_INST(inst) \
+	DT_INST_PROP_OR(inst, page_size, \
+		(BFP_FLASH_PAGE_EXP(inst) ? BIT(BFP_FLASH_PAGE_EXP(inst)) : SPI_NOR_PAGE_SIZE))
 
 #define SFDP_BUILD_ASSERTS(inst) \
 	BUILD_ASSERT(DT_INST_NODE_HAS_PROP(inst, sfdp_bfp), \
@@ -412,9 +411,10 @@
 	.octal_enable_req = OCTAL_ENABLE_REQ_NONE, \
 	.enter_4byte_addr = ENTER_4BYTE_ADDR_NONE }
 
-#define FLASH_SIZE(inst) (DT_INST_PROP(inst, size) / 8)
+#define FLASH_SIZE_INST(inst) (DT_INST_PROP(inst, size) / 8)
 
-#define FLASH_PAGE_SIZE(inst) SPI_NOR_PAGE_SIZE
+#define FLASH_PAGE_SIZE_INST(inst) \
+	DT_INST_PROP_OR(inst, page_size, SPI_NOR_PAGE_SIZE)
 
 #define SFDP_BUILD_ASSERTS(inst)
 

@@ -27,17 +27,11 @@
 #define RAMABLE_REGION RAM
 
 /* Region of the irq vectors and boot-vector SP/PC */
-#if defined(CONFIG_ROMSTART_RELOCATION_ROM)
+#if defined(CONFIG_ROMSTART_RELOCATION_ROM) && defined(CONFIG_XIP)
 #define ROMSTART_ADDR CONFIG_ROMSTART_REGION_ADDRESS
 #define ROMSTART_SIZE (CONFIG_ROMSTART_REGION_SIZE * 1K)
 #else
 #define ROMSTART_REGION ROMABLE_REGION
-#endif
-
-#if !defined(CONFIG_XIP) && (CONFIG_FLASH_SIZE == 0)
-#define ROM_ADDR RAM_ADDR
-#else
-#define ROM_ADDR (CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET)
 #endif
 
 #if defined(CONFIG_ROM_END_OFFSET)
@@ -46,14 +40,29 @@
 #define ROM_END_OFFSET 0
 #endif
 
+#if defined(CONFIG_FLASH_USES_MAPPED_PARTITION)
+#if defined(CONFIG_XIP)
+#define ROM_ADDR (DT_REG_ADDR(DT_CHOSEN(zephyr_code_partition)))
+#else
+#define ROM_ADDR RAM_ADDR
+#endif
+#define ROM_SIZE (DT_REG_SIZE(DT_CHOSEN(zephyr_code_partition)) - ROM_END_OFFSET)
+#else
+#if !defined(CONFIG_XIP) && (CONFIG_FLASH_SIZE == 0)
+#define ROM_ADDR RAM_ADDR
+#else
+#define ROM_ADDR (CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET)
+#endif /* !defined(CONFIG_XIP) && (CONFIG_FLASH_SIZE == 0) */
+
 #if CONFIG_FLASH_LOAD_SIZE > 0
 #define ROM_SIZE (CONFIG_FLASH_LOAD_SIZE - ROM_END_OFFSET)
 #else
 #define ROM_SIZE (CONFIG_FLASH_SIZE * 1024 - CONFIG_FLASH_LOAD_OFFSET - ROM_END_OFFSET)
 #endif
+#endif /* defined(CONFIG_FLASH_USES_MAPPED_PARTITION) */
 
-#define RAM_SIZE (CONFIG_SRAM_SIZE * 1K)
-#define RAM_ADDR CONFIG_SRAM_BASE_ADDRESS
+#define RAM_ADDR DT_CHOSEN_SRAM_ADDR
+#define RAM_SIZE DT_CHOSEN_SRAM_SIZE
 
 #if defined(CONFIG_CUSTOM_SECTION_ALIGN)
 _region_min_align = CONFIG_CUSTOM_SECTION_MIN_ALIGN_SIZE;
@@ -141,7 +150,7 @@ SECTIONS
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_itcm), okay)
 GROUP_START(ITCM)
 
-	SECTION_PROLOGUE(_ITCM_SECTION_NAME,,SUBALIGN(4))
+	SECTION_PROLOGUE(_ITCM_SECTION_NAME,,ALIGN(4))
 	{
 		__itcm_start = .;
 		*(.itcm)
@@ -200,7 +209,7 @@ GROUP_END(ITCM)
 	 * section overlap.
 	 */
 	__exidx_start = .;
-#if defined (__GCC_LINKER_CMD__) || defined (__LLD_LINKER_CMD__)
+#if defined (__GCC_LINKER_CMD__) || defined (__LLD_LINKER_CMD__) || defined(__ELD_LINKER_CMD__)
 	*(.ARM.exidx* gnu.linkonce.armexidx.*)
 #endif
 	__exidx_end = .;
@@ -342,7 +351,7 @@ GROUP_END(ITCM)
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 GROUP_START(DTCM)
 
-	SECTION_PROLOGUE(_DTCM_BSS_SECTION_NAME, (NOLOAD),SUBALIGN(4))
+	SECTION_PROLOGUE(_DTCM_BSS_SECTION_NAME, (NOLOAD),ALIGN(4))
 	{
 		__dtcm_start = .;
 		__dtcm_bss_start = .;
@@ -351,7 +360,7 @@ GROUP_START(DTCM)
 		__dtcm_bss_end = .;
 	} GROUP_LINK_IN(DTCM)
 
-	SECTION_PROLOGUE(_DTCM_NOINIT_SECTION_NAME, (NOLOAD),SUBALIGN(4))
+	SECTION_PROLOGUE(_DTCM_NOINIT_SECTION_NAME, (NOLOAD),ALIGN(4))
 	{
 		__dtcm_noinit_start = .;
 		*(.dtcm_noinit)
@@ -359,7 +368,7 @@ GROUP_START(DTCM)
 		__dtcm_noinit_end = .;
 	} GROUP_LINK_IN(DTCM)
 
-	SECTION_PROLOGUE(_DTCM_DATA_SECTION_NAME,,SUBALIGN(4))
+	SECTION_PROLOGUE(_DTCM_DATA_SECTION_NAME,,ALIGN(4))
 	{
 		__dtcm_data_start = .;
 		*(.dtcm_data)
@@ -386,7 +395,6 @@ GROUP_END(DTCM)
 
 #include <zephyr/linker/debug-sections.ld>
 
-    /DISCARD/ : { *(.note.GNU-stack) }
 
     SECTION_PROLOGUE(.ARM.attributes, 0,)
 	{
@@ -427,6 +435,11 @@ _flash_used = LOADADDR(.last_section) + SIZEOF(.last_section) - __rom_region_sta
         . = ALIGN(4);
 	__bss_start = .;
 	__kernel_ram_start = .;
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-bss.ld>
 
 	*(.bss)
 	*(".bss.*")

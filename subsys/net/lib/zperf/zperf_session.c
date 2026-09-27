@@ -10,6 +10,7 @@ LOG_MODULE_DECLARE(net_zperf, CONFIG_NET_ZPERF_LOG_LEVEL);
 
 #include <zephyr/kernel.h>
 
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/udp.h>
 
@@ -162,6 +163,7 @@ void zperf_reset_session_stats(struct session *session)
 	session->length = 0U;
 	session->outorder = 0U;
 	session->error = 0U;
+	session->missing_id_bitmap = 0U;
 	session->jitter = 0;
 	session->last_transit_time = 0;
 }

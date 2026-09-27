@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025 Analog Devices, Inc.
+ * Copyright (c) 2024-2026 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +25,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			cpu-power-states = <&idle &standby &powerdown>;
+			cpu-power-states = <&idle &standby &backup &powerdown>;
 
 			mpu: mpu@e000ed90 {
 				compatible = "arm,armv8m-mpu";
@@ -46,8 +46,16 @@
 			standby: standby {
 				compatible = "zephyr,power-state";
 				power-state-name = "standby";
-				min-residency-us = <1000>;
+				min-residency-us = <2000>;
 				exit-latency-us = <20>;
+			};
+
+			/* Backup Mode */
+			backup: backup {
+				compatible = "zephyr,power-state";
+				power-state-name = "suspend-to-ram";
+				min-residency-us = <5000>;
+				exit-latency-us = <4000>;
 			};
 
 			/* Powerdown Mode */
@@ -72,7 +80,7 @@
 		clk_inro: clk_inro {
 			compatible = "fixed-clock";
 			#clock-cells = <0>;
-			clock-frequency = <DT_FREQ_K(8)>;
+			clock-frequency = <DT_FREQ_K(131)>;
 			status = "disabled";
 		};
 
@@ -91,9 +99,25 @@
 		};
 
 		clk_erfo: clk_erfo {
-			compatible = "fixed-clock";
+			compatible = "adi,max32-erfo";
 			#clock-cells = <0>;
 			clock-frequency = <DT_FREQ_M(32)>;
+			capacitance-erfoctrl = <0>;
+			status = "disabled";
+		};
+
+		clk_rtc_in: clk_rtc_in {
+			compatible = "adi,max32-extclk";
+			#clock-cells = <0>;
+			clock-frequency = <DT_FREQ_K(32768)>;
+			status = "disabled";
+		};
+
+		clk_32k: clk_32k {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+			clocks = <&clk_ertco>;
 			status = "disabled";
 		};
 	};
@@ -104,27 +128,27 @@
 	#size-cells = <1>;
 
 	sram0: memory@0 {
-		compatible = "mmio-sram";
+		compatible = "adi,max32-backup-sram", "mmio-sram";
 		reg = <0x0 DT_SIZE_K(32)>;
 	};
 
 	sram1: memory@8000 {
-		compatible = "mmio-sram";
+		compatible = "adi,max32-backup-sram", "mmio-sram";
 		reg = <0x8000 DT_SIZE_K(32)>;
 	};
 
 	sram2: memory@10000 {
-		compatible = "mmio-sram";
+		compatible = "adi,max32-backup-sram", "mmio-sram";
 		reg = <0x10000 DT_SIZE_K(64)>;
 	};
 
 	sram3: memory@20000 {
-		compatible = "mmio-sram";
+		compatible = "adi,max32-backup-sram", "mmio-sram";
 		reg = <0x20000 DT_SIZE_K(64)>;
 	};
 
 	sram4: memory@30000 {
-		compatible = "mmio-sram";
+		compatible = "adi,max32-backup-sram", "mmio-sram";
 		reg = <0x30000 DT_SIZE_K(64)>;
 	};
 };
@@ -167,6 +191,7 @@
 		clocks = <&gcr ADI_MAX32_CLOCK_BUS0 13>;
 		interrupts = <10 0>;
 		status = "disabled";
+		zephyr,disabling-power-states = <&standby &backup>;
 	};
 
 	uart0: serial@42000 {
@@ -176,6 +201,7 @@
 		clock-source = <ADI_MAX32_PRPH_CLK_SRC_PCLK>;
 		interrupts = <11 0>;
 		status = "disabled";
+		zephyr,pm-device-runtime-auto;
 	};
 
 	trng: trng@4d000 {
@@ -211,6 +237,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -232,6 +260,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -253,6 +283,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -274,6 +306,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -295,6 +329,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -316,6 +352,8 @@
 
 		counter {
 			compatible = "adi,max32-counter";
+			zephyr,pm-device-runtime-auto;
+			zephyr,disabling-power-states = <&standby &backup>;
 			status = "disabled";
 		};
 	};
@@ -330,6 +368,12 @@
 		counter {
 			compatible = "adi,max32-wut";
 			status = "disabled";
+			zephyr,pm-device-runtime-auto;
+		};
+
+		timer {
+			compatible = "adi,max32-wut-timer";
+			status = "disabled";
 		};
 	};
 
@@ -342,6 +386,12 @@
 
 		counter {
 			compatible = "adi,max32-wut";
+			status = "disabled";
+			zephyr,pm-device-runtime-auto;
+		};
+
+		timer {
+			compatible = "adi,max32-wut-timer";
 			status = "disabled";
 		};
 	};
@@ -361,6 +411,7 @@
 		clocks = <&gcr ADI_MAX32_CLOCK_BUS0 6>;
 		interrupts = <12 0>;
 		status = "disabled";
+		zephyr,disabling-power-states = <&standby &backup>;
 	};
 };
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <nxp/mcx/MCXN947VDF-pinctrl.h>
+#include <nxp/mcx/mcxn/pinctrl/MCXN947VDF-pinctrl.h>
 
 &pinctrl {
 	pinmux_flexcomm1_lpspi: pinmux_flexcomm1_lpspi {
@@ -343,6 +343,15 @@
 			slew-rate = "slow";
 			drive-strength = "low";
 			input-enable;
+			bias-pull-up;
+		};
+	};
+
+	pinmux_tsi: pinmux_tsi {
+		group0 {
+			pinmux = <TSI0_CH3_PIO1_3>;
+			slew-rate = "fast";
+			drive-strength = "low";
 			bias-pull-up;
 		};
 	};

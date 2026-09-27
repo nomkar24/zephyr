@@ -377,7 +377,7 @@ static int sai_config_set(const struct device *dev,
 
 	ret = pm_device_runtime_get(dev);
 	if (ret < 0) {
-		LOG_ERR("failed to get() SAI device: %d", ret);
+		LOG_ERR_PM_DEVICE_RUNTIME_GET(dev, ret);
 		return ret;
 	}
 
@@ -445,7 +445,7 @@ static int sai_config_set(const struct device *dev,
 }
 
 /* SOF note: please be very careful with this function as it does
- * busy waiting and may mess up your timing in time critial applications
+ * busy waiting and may mess up your timing in time critical applications
  * (especially with timer domain). If this becomes unusable, the busy
  * waiting should be removed altogether and the HW state check should
  * be performed in sai_trigger_start() or in sai_config_set().
@@ -734,7 +734,7 @@ static int sai_trigger_start(const struct device *dev,
 
 	ret = pm_device_runtime_get(dev);
 	if (ret < 0) {
-		LOG_ERR("failed to get() SAI device: %d", ret);
+		LOG_ERR_PM_DEVICE_RUNTIME_GET(dev, ret);
 		return ret;
 	}
 

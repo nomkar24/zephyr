@@ -17,7 +17,9 @@ extern "C" {
  * (List extracted from /cmake/gcc-m-cpu.cmake)
  */
 #if defined(CONFIG_ARM)
-#if defined(CONFIG_CPU_CORTEX_M0)
+#if defined(CONFIG_CPU_ARM926EJ_S)
+#define PROCESSOR_NAME "arm926ej-s"
+#elif defined(CONFIG_CPU_CORTEX_M0)
 #define PROCESSOR_NAME "cortex-m0"
 #elif defined(CONFIG_CPU_CORTEX_M0PLUS)
 #define PROCESSOR_NAME "cortex-m0plus"
@@ -113,10 +115,14 @@ extern "C" {
 #else
 #define PROCESSOR_NAME "cortex-r52"
 #endif
+#elif defined(CONFIG_CPU_CORTEX_A5)
+#define PROCESSOR_NAME "cortex-a5"
 #elif defined(CONFIG_CPU_CORTEX_A7)
 #define PROCESSOR_NAME "cortex-a7"
 #elif defined(CONFIG_CPU_CORTEX_A9)
 #define PROCESSOR_NAME "cortex-a9"
+#elif defined(CONFIG_CPU_CORTEX_A32)
+#define PROCESSOR_NAME "cortex-a32"
 #endif
 #elif defined(CONFIG_ARM64)
 #if defined(CONFIG_CPU_CORTEX_A53)
@@ -137,6 +143,8 @@ extern "C" {
 #define PROCESSOR_NAME "cortex-a510"
 #elif defined(CONFIG_CPU_CORTEX_A320)
 #define PROCESSOR_NAME "cortex-a320"
+#elif defined(CONFIG_CPU_CORTEX_A720)
+#define PROCESSOR_NAME "cortex-a720"
 #elif defined(CONFIG_CPU_CORTEX_R82)
 #define PROCESSOR_NAME "armv8.4-a+nolse"
 #endif
@@ -182,6 +190,10 @@ extern "C" {
 #define PROCESSOR_NAME "xtensa"
 #elif defined(CONFIG_SPARC)
 #define PROCESSOR_NAME "sparc"
+#elif defined(CONFIG_OPENRISC)
+#define PROCESSOR_NAME "openrisc"
+#elif defined(CONFIG_TRICORE)
+#define PROCESSOR_NAME "tricore"
 #endif
 
 #if defined(CONFIG_ARCH_POSIX)

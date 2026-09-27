@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2026 Infineon Technologies AG
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+ * SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,9 +32,6 @@
 
 &peri_clk_div3 {
 	status = "okay";
-	resource-type = <IFX_RSC_TCPWM>;
-	resource-instance = <0>;
-	resource-channel = <0>;
 	clock-div = <24>;
 };
 

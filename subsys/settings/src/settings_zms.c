@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include "settings/settings_zms.h"
+#include <settings/settings_zms.h>
 #include "settings_priv.h"
 
 #include <zephyr/settings/settings.h>
@@ -19,9 +19,9 @@
 LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
 
 #if DT_HAS_CHOSEN(zephyr_settings_partition)
-#define SETTINGS_PARTITION DT_FIXED_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
+#define SETTINGS_PARTITION DT_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
 #else
-#define SETTINGS_PARTITION FIXED_PARTITION_ID(storage_partition)
+#define SETTINGS_PARTITION PARTITION_ID(storage_partition)
 #endif
 
 struct settings_zms_read_fn_arg {

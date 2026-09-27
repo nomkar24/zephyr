@@ -118,16 +118,17 @@ static int enabled_clock(uint32_t src_clk)
 	return -ENOTSUP;
 }
 
+static int stm32_clock_control_configure(const struct device *dev,
+					 clock_control_subsys_t sub_system, void *data);
+
 static int stm32_clock_control_on(const struct device *dev, clock_control_subsys_t sub_system)
 {
 	struct stm32_pclken *pclken = (struct stm32_pclken *)sub_system;
 	volatile int temp;
 
-	ARG_UNUSED(dev);
-
 	if (!IN_RANGE(pclken->bus, STM32_PERIPH_BUS_MIN, STM32_PERIPH_BUS_MAX)) {
-		/* Attempt to toggle a wrong periph clock bit */
-		return -ENOTSUP;
+		/* Source selection entry: apply it instead of toggling a gate */
+		return stm32_clock_control_configure(dev, sub_system, NULL);
 	}
 
 	sys_set_bits(DT_REG_ADDR(DT_NODELABEL(rcc)) + pclken->bus, pclken->enr);
@@ -315,7 +316,7 @@ static DEVICE_API(clock_control, stm32_clock_control_api) = {
 
 static void set_regu_voltage(uint32_t hclk_freq)
 {
-	if (hclk_freq < MHZ(48)) {
+	if (hclk_freq <= MHZ(48)) {
 		LL_PWR_SetRegulVoltageScaling(LL_PWR_REGU_VOLTAGE_SCALE2);
 	} else {
 		LL_PWR_SetRegulVoltageScaling(LL_PWR_REGU_VOLTAGE_SCALE1);
@@ -333,11 +334,21 @@ static void enable_epod_booster(void)
 
 #if STM32_MSIK_PLL_MODE || STM32_MSIS_PLL_MODE
 
-/* Use two asserts for more precise error messages */
-BUILD_ASSERT(STM32_LSE_ENABLED || !STM32_MSIK_PLL_MODE,
-	"MSIK PLL mode requires LSE clock to be enabled for auto-calibration");
-BUILD_ASSERT(STM32_LSE_ENABLED || !STM32_MSIS_PLL_MODE,
-	"MSIS PLL mode requires LSE clock to be enabled for auto-calibration");
+/* MSIS and MSIK in PLL mode depends on LSE at 32768Hz (mandatory if present)
+ * or HSE at 16MHz or 32MHz.
+ *
+ * Note: STM32_xSE_FREQ is 0 when related xSE clock is disable.
+ * Use two asserts for more precise error messages.
+ */
+#define MSI_PLL_SOURCE_CLOCK_IS_VALID	((STM32_LSE_FREQ == 32768) || \
+					 (STM32_HSE_FREQ == 32000000) || \
+					 (STM32_HSE_FREQ == 16000000))
+
+BUILD_ASSERT(MSI_PLL_SOURCE_CLOCK_IS_VALID || !STM32_MSIK_PLL_MODE,
+	"MSIK PLL mode requires LSE or HSE clock to be enabled for auto-calibration");
+
+BUILD_ASSERT(MSI_PLL_SOURCE_CLOCK_IS_VALID || !STM32_MSIS_PLL_MODE,
+	"MSIS PLL mode requires LSE or HSE clock to be enabled for auto-calibration");
 
 static void configure_clock_with_calibration(int range)
 {

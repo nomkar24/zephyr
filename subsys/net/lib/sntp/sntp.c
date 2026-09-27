@@ -1,8 +1,9 @@
 /*
- * Copyright (c) 2017 Linaro Limited
- * Copyright (c) 2019 Intel Corporation
- * Copyright (c) 2024 Embeint Inc
- *
+ * SPDX-FileCopyrightText: Copyright (c) 2017 Linaro Limited
+ * SPDX-FileCopyrightText: Copyright (c) 2019 Intel Corporation
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Embeint Inc
+ * SPDX-FileCopyrightText: Copyright (c) 2025 Lothar Felten
+ * SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,18 +11,12 @@
 LOG_MODULE_REGISTER(net_sntp, CONFIG_SNTP_LOG_LEVEL);
 
 #include <zephyr/net/sntp.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/sys/clock.h>
 #include "sntp_pkt.h"
 #include <limits.h>
 
-#define SNTP_LI_MAX 3
-#define SNTP_VERSION_NUMBER 3
-#define SNTP_MODE_CLIENT 3
-#define SNTP_MODE_SERVER 4
-#define SNTP_STRATUM_KOD 0 /* kiss-o'-death */
-#define OFFSET_1970_JAN_1 2208988800
-
-static void sntp_pkt_dump(struct sntp_pkt *pkt)
+void sntp_pkt_dump(struct sntp_pkt *pkt)
 {
 	if (!pkt) {
 		return;
@@ -131,13 +126,18 @@ static int32_t parse_response(uint8_t *data, uint16_t len, struct sntp_time *exp
 	int64_t root_delay_us = q16_16_s_to_ll_us(net_ntohl(pkt->root_delay));
 	uint32_t precision_us;
 
-	if (pkt->precision <= 0) {
-		precision_us = (uint32_t)(USEC_PER_SEC + USEC_PER_SEC / 2) >> -pkt->precision;
-	} else if (pkt->precision <= 10) {
-		precision_us = (uint32_t)(USEC_PER_SEC + USEC_PER_SEC / 2) << pkt->precision;
-	} else {
+	/* precision is a shift count on a 32-bit value; below -31 the
+	 * shift is undefined, and the expression already saturates to 0 us.
+	 */
+	if (pkt->precision < -31 || pkt->precision > 10) {
 		NET_DBG("SNTP packet precision out of range: %d", pkt->precision);
 		return -EINVAL;
+	}
+
+	if (pkt->precision <= 0) {
+		precision_us = (uint32_t)(USEC_PER_SEC + USEC_PER_SEC / 2) >> -pkt->precision;
+	} else {
+		precision_us = (uint32_t)(USEC_PER_SEC + USEC_PER_SEC / 2) << pkt->precision;
 	}
 
 	res->uptime_us = client_rx_us;
@@ -170,7 +170,7 @@ static int32_t parse_response(uint8_t *data, uint16_t len, struct sntp_time *exp
 	return 0;
 }
 
-int sntp_init(struct sntp_ctx *ctx, struct net_sockaddr *addr, net_socklen_t addr_len)
+int sntp_init(struct sntp_ctx *ctx, const struct net_sockaddr *addr, net_socklen_t addr_len)
 {
 	int ret;
 
@@ -282,7 +282,7 @@ void sntp_close(struct sntp_ctx *ctx)
 
 #ifdef CONFIG_NET_SOCKETS_SERVICE
 
-int sntp_init_async(struct sntp_ctx *ctx, struct net_sockaddr *addr, net_socklen_t addr_len,
+int sntp_init_async(struct sntp_ctx *ctx, const struct net_sockaddr *addr, net_socklen_t addr_len,
 		    const struct net_socket_service_desc *service)
 {
 	int ret;
@@ -342,13 +342,8 @@ int sntp_read_async(struct net_socket_service_event *event, struct sntp_time *ts
 
 void sntp_close_async(const struct net_socket_service_desc *service)
 {
-	struct sntp_ctx *ctx = service->pev->user_data;
-	/* Detach socket from socket service */
-	net_socket_service_unregister(service);
-	/* CLose the socket */
-	if (ctx) {
-		(void)zsock_close(ctx->sock.fd);
-	}
+	/* Detach socket from socket service with automatic close */
+	net_socket_service_close(service);
 }
 
 #endif /* CONFIG_NET_SOCKETS_SERVICE */

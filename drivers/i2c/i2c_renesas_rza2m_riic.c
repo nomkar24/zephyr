@@ -118,13 +118,13 @@ struct i2c_rza2m_riic_data {
 #define RIIC_FER_MALE  BIT(1) /* Controller Arbitration-Lost Detection Enable */
 #define RIIC_FER_TMOE  BIT(0) /* Timeout Function Enable */
 
-#define RIIC_SER_HOAE       BIT(7) /* Host Address Enable */
-#define RIIC_SER_DIE        BIT(5) /* Device-ID Address Detection Enable */
-#define RIIC_SER_GCE        BIT(3) /* General Call Address Enable */
-#define RIIC_SER_SAR2       BIT(2) /* Target Address Register 2 Enable */
-#define RIIC_SER_SAR1       BIT(1) /* Target Address Register 1 Enable */
-#define RIIC_SER_SAR0       BIT(0) /* Target Address Register 0 Enable */
-#define RIIC_SER_SLAVE_MASK (RIIC_SER_SAR0 | RIIC_SER_SAR1 | RIIC_SER_SAR2)
+#define RIIC_SER_HOAE        BIT(7) /* Host Address Enable */
+#define RIIC_SER_DIE         BIT(5) /* Device-ID Address Detection Enable */
+#define RIIC_SER_GCE         BIT(3) /* General Call Address Enable */
+#define RIIC_SER_SAR2        BIT(2) /* Target Address Register 2 Enable */
+#define RIIC_SER_SAR1        BIT(1) /* Target Address Register 1 Enable */
+#define RIIC_SER_SAR0        BIT(0) /* Target Address Register 0 Enable */
+#define RIIC_SER_TARGET_MASK (RIIC_SER_SAR0 | RIIC_SER_SAR1 | RIIC_SER_SAR2)
 
 #define RIIC_IER_TIE   BIT(7) /* Transmit Data Empty Interrupt Enable */
 #define RIIC_IER_TEIE  BIT(6) /* Transmit End Interrupt Enable */
@@ -331,10 +331,6 @@ static int i2c_rza2m_riic_validate_msgs(const struct device *dev, struct i2c_msg
 {
 	struct i2c_msg *current, *next;
 
-	if (!num_msgs) {
-		return 0;
-	}
-
 	current = msgs;
 	current->flags |= I2C_MSG_RESTART;
 	for (int i = 1; i <= num_msgs; i++) {
@@ -417,10 +413,6 @@ static int i2c_rza2m_riic_transfer(const struct device *dev, struct i2c_msg *msg
 	struct i2c_rza2m_riic_data *data = dev->data;
 	int ret = 0;
 
-	if (!num_msgs) {
-		return 0;
-	}
-
 	ret = i2c_rza2m_riic_validate_msgs(dev, msgs, num_msgs);
 	if (ret) {
 		return ret;
@@ -469,7 +461,7 @@ static void i2c_rza2m_riic_calc_bitrate(const struct device *dev, uint32_t total
 	const uint32_t peripheral_clock = data->clk_rate;
 	uint32_t constant_add = 0;
 
-	/* A constant is added to BRL and BRH in all formulas. This constand is 3 + nf when CKS ==
+	/* A constant is added to BRL and BRH in all formulas. This constant is 3 + nf when CKS ==
 	 * 0, or 2 + nf when CKS != 0.
 	 */
 	if (divider == 0) {

@@ -321,7 +321,7 @@ struct bt_iso_chan_path {
 	 *
 	 * Shall not be NULL if bt_iso_chan_path.cc_len is non-zero.
 	 */
-	uint8_t *cc;
+	const uint8_t *cc;
 };
 
 /** ISO packet status flag bits */
@@ -376,8 +376,10 @@ struct bt_iso_tx_info {
 	uint16_t seq_num;
 };
 
-
-/** Opaque type representing an Connected Isochronous Group (CIG). */
+/**
+ * @struct bt_iso_cig
+ * @brief Opaque type representing a Connected Isochronous Group (CIG).
+ */
 struct bt_iso_cig;
 
 /** @brief Connected Isochronous Group (CIG) parameters */
@@ -488,7 +490,10 @@ struct bt_iso_connect_param {
 	struct bt_conn *acl;
 };
 
-/** Opaque type representing a Broadcast Isochronous Group (BIG). */
+/**
+ * @struct bt_iso_big
+ * @brief Opaque type representing a Broadcast Isochronous Group (BIG).
+ */
 struct bt_iso_big;
 
 /** @brief Broadcast Isochronous Group (BIG) creation parameters */
@@ -684,7 +689,17 @@ struct bt_iso_biginfo {
 	bool  encryption;
 };
 
-/** @brief ISO Channel operations structure. */
+/**
+ * @brief ISO Channel operations structure.
+ *
+ * @note The callbacks are invoked from a thread context, never from an
+ *       ISR. Whether a callback is invoked from a context internal to
+ *       the stack or synchronously from within the API call that
+ *       triggers it, and from which context, is not part of the API and
+ *       may change between releases. See
+ *       @rstref{Callback execution contexts <bluetooth_callback_contexts>}
+ *       for the hazards of blocking in a callback and their mitigations.
+ */
 struct bt_iso_chan_ops {
 	/**
 	 * @brief Channel connected callback
@@ -758,6 +773,18 @@ struct bt_iso_chan_ops {
 	 * @param chan The channel which has sent data.
 	 */
 	void (*sent)(struct bt_iso_chan *chan);
+
+	/**
+	 * @brief Channel send failed callback
+	 *
+	 * This callback will be called if the call to bt_iso_chan_send() was successful, but
+	 * where the send operation later failed before the request was sent to the Bluetooth
+	 * Controller. This can happen if the @p chan has disconnected.
+	 *
+	 * @param chan The channel for which the send operation failed.
+	 * @param err The reason for the send failure.
+	 */
+	void (*send_failed)(struct bt_iso_chan *chan, int err);
 };
 
 /** @brief ISO Accept Info Structure */
@@ -794,6 +821,16 @@ struct bt_iso_server {
 	 */
 	int (*accept)(const struct bt_iso_accept_info *info, struct bt_iso_chan **chan);
 };
+
+/**
+ * @brief Lookup a bt_iso_chan object by its @ref bt_iso_chan.iso reference
+ *
+ * This is useful to get the corresponding bt_iso_chan object when using e.g. bt_conn_foreach.
+ *
+ * @param iso A connection object with type @ref BT_CONN_TYPE_ISO
+ * @return The corresponding bt_iso_chan object or NULL.
+ */
+struct bt_iso_chan *bt_iso_get_chan_by_conn(const struct bt_conn *iso);
 
 /**
  * @brief Register ISO server.
@@ -1311,6 +1348,14 @@ int bt_iso_big_terminate(struct bt_iso_big *big);
  */
 int bt_iso_big_sync(struct bt_le_per_adv_sync *sync, struct bt_iso_big_sync_param *param,
 		    struct bt_iso_big **out_big);
+
+/**
+ * @brief Returns a string representation of an ISO channel state
+ *
+ * @param state The state of the channel
+ * @return A string representation, or "unknown" if unknown state.
+ */
+const char *bt_iso_chan_state_str(enum bt_iso_state state);
 
 #ifdef __cplusplus
 }

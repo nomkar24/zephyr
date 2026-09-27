@@ -7,6 +7,7 @@
 #include <zephyr/ztest.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/device.h>
+#include <zephyr/storage/flash_map.h>
 
 /* Warning: The test has been written for testing boards with single
  * instance of Flash Simulator device only.
@@ -18,7 +19,7 @@
 #else
 #define SOC_NV_FLASH_NODE DT_CHILD(DT_INST(0, zephyr_sim_flash), flash_sim_0)
 #endif /* CONFIG_ARCH_POSIX */
-#define FLASH_SIMULATOR_BASE_OFFSET DT_REG_ADDR(SOC_NV_FLASH_NODE)
+#define FLASH_SIMULATOR_BASE_OFFSET PARTITION_NODE_OFFSET(SOC_NV_FLASH_NODE)
 #define FLASH_SIMULATOR_ERASE_UNIT DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
 #define FLASH_SIMULATOR_PROG_UNIT DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 #define FLASH_SIMULATOR_FLASH_SIZE DT_REG_SIZE(SOC_NV_FLASH_NODE)
@@ -92,7 +93,7 @@ static int test_check_erase(const struct device *dev, off_t offset, size_t size)
 	while (i < size) {
 		size_t chunk = MIN(size - i, sizeof(buf));
 		/* The memset is done to set buf to something else than
-		 * FLASH_SIMULATOR_ERASE_VALUE, as we are trying to chek
+		 * FLASH_SIMULATOR_ERASE_VALUE, as we are trying to check
 		 * whether that is what is now in the memory.
 		 */
 		memset(buf, ~FLASH_SIMULATOR_ERASE_VALUE, sizeof(buf));
@@ -301,10 +302,10 @@ ZTEST(flash_sim_api, test_align)
 	zassert_equal(-EINVAL, rc, "Unexpected error code (%d)", rc);
 }
 
-#if defined(CONFIG_FLASH_SIMULATOR_DOUBLE_WRITES) &&	\
-	defined(CONFIG_FLASH_SIMULATOR_EXPLICIT_ERASE)
 ZTEST(flash_sim_api, test_double_write)
 {
+#if defined(CONFIG_FLASH_SIMULATOR_DOUBLE_WRITES) &&	\
+	defined(CONFIG_FLASH_SIMULATOR_EXPLICIT_ERASE)
 	int rc;
 	/* Test checks behaviour of write when attempting to double write
 	 * selected offset. Simulator, prior to write, checks if selected
@@ -325,12 +326,14 @@ ZTEST(flash_sim_api, test_double_write)
 	rc = flash_write(flash_dev, FLASH_SIMULATOR_BASE_OFFSET,
 				 &data, sizeof(data));
 	zassert_equal(-EIO, rc, "Unexpected error code (%d)", rc);
-}
+#else
+	ztest_test_skip();
 #endif
+}
 
-#if !defined(CONFIG_FLASH_SIMULATOR_EXPLICIT_ERASE)
 ZTEST(flash_sim_api, test_ramlike)
 {
+#if defined(CONFIG_FLASH_SIMULATOR_RAMLIKE)
 	/* Within code below there is assumption that the src size is
 	 * equal or greater than the FLASH_SIMULATOR_PROG_UNIT
 	 * (write-block-size) of device.
@@ -440,8 +443,10 @@ ZTEST(flash_sim_api, test_ramlike)
 		} while (i & (sizeof(buf) - 1));
 		zassert_equal(0, rc, "Unexpected value read");
 	}
-}
+#else
+	ztest_test_skip();
 #endif
+}
 
 ZTEST(flash_sim_api, test_get_erase_value)
 {
@@ -528,6 +533,40 @@ ZTEST(flash_sim_api, test_flash_fill)
 	}
 }
 
+#if !defined(CONFIG_FLASH_SIMULATOR_EXPLICIT_ERASE)
+/* Forwarding flash API instance with erase intentionally set to NULL, used by
+ * test_flash_flatten to verify the flash_flatten() fallback to flash_fill()
+ * when the driver's erase callback is unimplemented. The instance must live
+ * in the flash driver API iterable section (declared via DEVICE_API) so that
+ * DEVICE_API_GET passes its class assertion at runtime.
+ */
+static int no_erase_api_read(const struct device *dev, off_t offset, void *data, size_t len)
+{
+	ARG_UNUSED(dev);
+	return flash_read(flash_dev, offset, data, len);
+}
+
+static int no_erase_api_write(const struct device *dev, off_t offset, const void *data,
+			      size_t len)
+{
+	ARG_UNUSED(dev);
+	return flash_write(flash_dev, offset, data, len);
+}
+
+static const struct flash_parameters *no_erase_api_get_parameters(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	return flash_get_parameters(flash_dev);
+}
+
+static DEVICE_API(flash, no_erase_api) = {
+	.read = no_erase_api_read,
+	.write = no_erase_api_write,
+	.erase = NULL,
+	.get_parameters = no_erase_api_get_parameters,
+};
+#endif
+
 ZTEST(flash_sim_api, test_flash_flatten)
 {
 	int rc;
@@ -558,12 +597,9 @@ ZTEST(flash_sim_api, test_flash_flatten)
 	 * with erase_value.
 	 */
 	struct device other;
-	struct flash_driver_api api;
 
 	memcpy(&other, flash_dev, sizeof(other));
-	other.api = &api;
-	memcpy(&api, flash_dev->api, sizeof(api));
-	api.erase = NULL;
+	other.api = &no_erase_api;
 
 	/* Now fill the device with anything */
 	rc = flash_fill(flash_dev, 0xaa,
