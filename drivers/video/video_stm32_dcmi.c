@@ -464,9 +464,9 @@ static int video_stm32_dcmi_enum_frmival(const struct device *dev, struct video_
 		fie->discrete.numerator *= capture_rate;
 	} else {
 		fie->stepwise = sensor_fie.stepwise;
-		fie->stepwise.min.numerator *= capture_rate;
-		fie->stepwise.max.numerator *= capture_rate;
-		fie->stepwise.step.numerator *= capture_rate;
+		fie->stepwise.min *= capture_rate;
+		fie->stepwise.max *= capture_rate;
+		fie->stepwise.step *= capture_rate;
 	}
 
 	return 0;
@@ -480,8 +480,8 @@ static int video_stm32_dcmi_set_frmival(const struct device *dev, struct video_f
 		.format = &data->fmt,
 	};
 	struct video_frmival best_sensor_frmival;
-	uint32_t best_diff_us = INT32_MAX;
-	uint32_t diff_us = 0, a, b;
+	uint64_t best_diff_us = UINT64_MAX;
+	uint64_t diff_us = 0, a, b;
 	int best_capture_rate = 1;
 	int ret;
 
@@ -502,7 +502,7 @@ static int video_stm32_dcmi_set_frmival(const struct device *dev, struct video_f
 
 		ret = video_closest_frmival(config->sensor_dev, &fie);
 		if (ret < 0) {
-			return ret;
+			continue;
 		}
 		b = video_frmival_nsec(&fie.discrete) * capture_rate / USEC_PER_MSEC;
 		diff_us = a > b ? a - b : b - a;
@@ -514,6 +514,10 @@ static int video_stm32_dcmi_set_frmival(const struct device *dev, struct video_f
 		if (diff_us == 0) {
 			break;
 		}
+	}
+
+	if (best_diff_us == UINT64_MAX) {
+		return -EINVAL;
 	}
 
 	/*

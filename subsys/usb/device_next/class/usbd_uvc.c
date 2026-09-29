@@ -367,7 +367,8 @@ static int uvc_get_vs_probe_frame_interval(const struct device *dev, struct uvc_
 		probe->dwFrameInterval = sys_cpu_to_le32(1);
 		break;
 	case UVC_GET_CUR:
-		probe->dwFrameInterval = sys_cpu_to_le32(data->video_frmival.numerator);
+		probe->dwFrameInterval = sys_cpu_to_le32(
+			video_frmival_nsec(&data->video_frmival) / 100);
 		break;
 	default:
 		return -EINVAL;
@@ -1336,7 +1337,7 @@ static void uvc_set_vs_bitrate_range(struct uvc_frame_common_descriptor *const d
 }
 
 static int uvc_add_vs_frame_interval(struct uvc_frame_common_descriptor *const desc,
-				     const struct video_frmival *const frmival,
+				     const uint64_t frmival_nsec,
 				     const struct video_format *const fmt)
 {
 	uint8_t *dwFrameInterval;
@@ -1368,12 +1369,12 @@ static int uvc_add_vs_frame_interval(struct uvc_frame_common_descriptor *const d
 		return -ENOMEM;
 	}
 
-	sys_put_le32(sys_cpu_to_le32(video_frmival_nsec(frmival) / 100),
+	sys_put_le32(sys_cpu_to_le32(frmival_nsec / 100),
 		     &dwFrameInterval[sizeof(uint32_t) * *bFrameIntervalType]);
 	*bFrameIntervalType += 1;
 	desc->bLength += sizeof(uint32_t);
 
-	uvc_set_vs_bitrate_range(desc, video_frmival_nsec(frmival), fmt);
+	uvc_set_vs_bitrate_range(desc, frmival_nsec, fmt);
 
 	return 0;
 }
@@ -1448,7 +1449,8 @@ static int uvc_add_vs_frame_desc(const struct device *dev,
 		case VIDEO_FRMIVAL_TYPE_DISCRETE:
 			LOG_DBG("Adding discrete frame interval %u", fie.index);
 
-			ret = uvc_add_vs_frame_interval(desc, &fie.discrete, fmt);
+			ret = uvc_add_vs_frame_interval(
+				desc, video_frmival_nsec(&fie.discrete), fmt);
 			if (ret != 0) {
 				return ret;
 			}
@@ -1457,12 +1459,12 @@ static int uvc_add_vs_frame_desc(const struct device *dev,
 		case VIDEO_FRMIVAL_TYPE_STEPWISE:
 			LOG_DBG("Adding stepwise frame interval %u", fie.index);
 
-			ret = uvc_add_vs_frame_interval(desc, &fie.stepwise.min, fmt);
+			ret = uvc_add_vs_frame_interval(desc, fie.stepwise.min, fmt);
 			if (ret != 0) {
 				return ret;
 			}
 
-			ret = uvc_add_vs_frame_interval(desc, &fie.stepwise.max, fmt);
+			ret = uvc_add_vs_frame_interval(desc, fie.stepwise.max, fmt);
 			if (ret != 0) {
 				return ret;
 			}
@@ -1474,11 +1476,9 @@ static int uvc_add_vs_frame_desc(const struct device *dev,
 		fie.index++;
 	}
 
-	/* If no frame intrval supported, default to 30 FPS */
+	/* If no frame interval supported, default to 30 FPS */
 	if (*bFrameIntervalType == 0) {
-		struct video_frmival frmival = {.numerator = 1, .denominator = 30};
-
-		ret = uvc_add_vs_frame_interval(desc, &frmival, fmt);
+		ret = uvc_add_vs_frame_interval(desc, NSEC_PER_SEC / 30, fmt);
 		if (ret != 0) {
 			return ret;
 		}

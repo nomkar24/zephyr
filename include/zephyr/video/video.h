@@ -364,16 +364,16 @@ static inline uint64_t video_frmival_nsec(const struct video_frmival *frmival)
  * @brief Find the closest match to a frame interval value within a stepwise frame interval.
  *
  * @param stepwise The stepwise frame interval range to search
- * @param desired The frame interval for which find the closest match
- * @param match The resulting frame interval closest to @p desired
+ * @param desired The frame interval in nanoseconds for which to find the closest match
+ * @param match Pointer to store the resulting frame interval closest to @p desired in nanoseconds
  *
  * @retval 0 If successful.
  * @retval -EINVAL If parameters are invalid.
- * @retval -ERANGE If the step is zero or the result does not fit in 32-bit values.
+ * @retval -ERANGE If the step is zero.
  */
 int video_closest_frmival_stepwise(const struct video_frmival_stepwise *stepwise,
-				   const struct video_frmival *desired,
-				   struct video_frmival *match);
+				   uint64_t desired,
+				   uint64_t *match);
 
 /**
  * @brief Find the closest match to a frame interval value within a video device.

@@ -1788,16 +1788,13 @@ static int enum_frame_intervals(const struct uvc_frame_common_descriptor *frame_
 		}
 
 		frmival_enum->type = VIDEO_FRMIVAL_TYPE_STEPWISE;
-		frmival_enum->stepwise.min.numerator = sys_get_le32(interval_data);
-		frmival_enum->stepwise.min.denominator = (NSEC_PER_SEC / 100);
-		frmival_enum->stepwise.max.numerator = sys_get_le32(interval_data + 4);
-		frmival_enum->stepwise.max.denominator = (NSEC_PER_SEC / 100);
-		frmival_enum->stepwise.step.numerator = sys_get_le32(interval_data + 8);
-		frmival_enum->stepwise.step.denominator = (NSEC_PER_SEC / 100);
+		frmival_enum->stepwise.min = (uint64_t)sys_get_le32(interval_data) * 100ULL;
+		frmival_enum->stepwise.max = (uint64_t)sys_get_le32(interval_data + 4) * 100ULL;
+		frmival_enum->stepwise.step = (uint64_t)sys_get_le32(interval_data + 8) * 100ULL;
 
-		LOG_DBG("Stepwise intervals: min=%u, max=%u, step=%u (100ns)",
-			frmival_enum->stepwise.min.numerator, frmival_enum->stepwise.max.numerator,
-			frmival_enum->stepwise.step.numerator);
+		LOG_DBG("Stepwise intervals: min=%" PRIu64 ", max=%" PRIu64 ", step=%" PRIu64 " ns",
+			frmival_enum->stepwise.min, frmival_enum->stepwise.max,
+			frmival_enum->stepwise.step);
 
 	} else {
 		/* Discrete frame intervals */

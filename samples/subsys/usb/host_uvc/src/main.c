@@ -63,10 +63,9 @@ static void log_video_info(const struct device *uvc_dev,
 		if (fie.type == VIDEO_FRMIVAL_TYPE_DISCRETE) {
 			LOG_INF("   %u/%u", fie.discrete.numerator, fie.discrete.denominator);
 		} else {
-			LOG_INF("   [min = %u/%u; max = %u/%u; step = %u/%u]",
-				fie.stepwise.min.numerator, fie.stepwise.min.denominator,
-				fie.stepwise.max.numerator, fie.stepwise.max.denominator,
-				fie.stepwise.step.numerator, fie.stepwise.step.denominator);
+			LOG_INF("   [min = %" PRIu64 " ns; max = %" PRIu64 " ns; step = %" PRIu64
+				" ns]",
+				fie.stepwise.min, fie.stepwise.max, fie.stepwise.step);
 		}
 
 		fie.index++;

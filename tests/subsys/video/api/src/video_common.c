@@ -105,72 +105,57 @@ ZTEST(video_common, test_video_frmival_nsec)
 ZTEST(video_common, test_video_closest_frmival_stepwise)
 {
 	struct video_frmival_stepwise stepwise;
-	struct video_frmival desired;
-	struct video_frmival expected;
-	struct video_frmival match;
+	uint64_t desired;
+	uint64_t expected;
+	uint64_t match;
 	int ret;
 
-	stepwise.min.numerator = 1;
-	stepwise.min.denominator = 30;
-	stepwise.max.numerator = 30;
-	stepwise.max.denominator = 30;
-	stepwise.step.numerator = 1;
-	stepwise.step.denominator = 30;
+	stepwise.min = NSEC_PER_SEC / 30;
+	stepwise.max = 30 * (NSEC_PER_SEC / 30);
+	stepwise.step = NSEC_PER_SEC / 30;
 
-	desired.numerator = 1;
-	desired.denominator = 1;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = NSEC_PER_SEC;
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&desired), "1 / 1");
+	zassert_equal(match, stepwise.max, "1 / 1");
 
-	desired.numerator = 3;
-	desired.denominator = 30;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = 3 * (NSEC_PER_SEC / 30);
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&desired), "3 / 30");
+	zassert_equal(match, desired, "3 / 30");
 
-	desired.numerator = 7;
-	desired.denominator = 80;
-	expected.numerator = 3;
-	expected.denominator = 30;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = (uint64_t)NSEC_PER_SEC * 7 / 80;
+	expected = 3 * (NSEC_PER_SEC / 30);
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&expected), "7 / 80");
+	zassert_equal(match, expected, "7 / 80");
 
-	desired.numerator = 1;
-	desired.denominator = 120;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = NSEC_PER_SEC / 120;
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&stepwise.min), "1 / 120");
+	zassert_equal(match, stepwise.min, "1 / 120");
 
-	desired.numerator = 100;
-	desired.denominator = 1;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = 100ULL * NSEC_PER_SEC;
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&stepwise.max), "100 / 1");
+	zassert_equal(match, stepwise.max, "100 / 1");
 
-	/* The product of all denominators does not fit in 32 bits */
-	stepwise.min.numerator = 1;
-	stepwise.min.denominator = 60;
-	stepwise.max.numerator = UINT32_MAX;
-	stepwise.max.denominator = 1;
-	stepwise.step.numerator = 1;
-	stepwise.step.denominator = 1000;
+	/* Fine 1ms step test with large max */
+	stepwise.min = NSEC_PER_SEC / 60;
+	stepwise.max = UINT64_MAX;
+	stepwise.step = NSEC_PER_MSEC;
 
-	desired.numerator = 16667;
-	desired.denominator = USEC_PER_SEC;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = 16667ULL * NSEC_PER_USEC;
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&stepwise.min),
-		      "16667 / 1000000");
+	zassert_equal(match, stepwise.min, "16667 / 1000000");
 
-	desired.numerator = 33333;
-	desired.denominator = USEC_PER_SEC;
-	expected.numerator = 101;
-	expected.denominator = 3000;
-	ret = video_closest_frmival_stepwise(&stepwise, &desired, &match);
+	desired = 33333ULL * NSEC_PER_USEC;
+	expected = stepwise.min +
+		   DIV_ROUND_CLOSEST(desired - stepwise.min, stepwise.step) * stepwise.step;
+	ret = video_closest_frmival_stepwise(&stepwise, desired, &match);
 	zassert_ok(ret, "expecting video_closest_frmival_stepwise to work");
-	zassert_equal(video_frmival_nsec(&match), video_frmival_nsec(&expected), "33333 / 1000000");
+	zassert_equal(match, expected, "33333 / 1000000");
 }
 
 ZTEST(video_common, test_video_buffer_release_null)

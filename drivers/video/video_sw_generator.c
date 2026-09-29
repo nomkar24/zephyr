@@ -762,13 +762,10 @@ static int video_sw_generator_enum_frmival(const struct device *dev, struct vide
 	}
 
 	fie->type = VIDEO_FRMIVAL_TYPE_STEPWISE;
-	fie->stepwise.min.numerator = 1;
-	fie->stepwise.min.denominator = MAX_FRAME_RATE;
-	fie->stepwise.max.numerator = UINT32_MAX;
-	fie->stepwise.max.denominator = 1;
+	fie->stepwise.min = NSEC_PER_SEC / MAX_FRAME_RATE;
+	fie->stepwise.max = UINT64_MAX;
 	/* The frame interval step size is the minimum resolution of K_MSEC(), which is 1ms */
-	fie->stepwise.step.numerator = 1;
-	fie->stepwise.step.denominator = 1000;
+	fie->stepwise.step = NSEC_PER_MSEC;
 
 	return 0;
 }

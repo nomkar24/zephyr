@@ -2025,6 +2025,11 @@ Video
 * The APIs present in ``<zephyr/drivers/video.h>`` are now available under
   ``<zephyr/video/video.h>``. (:github:`112420`)
 
+* :c:struct:`video_frmival_stepwise` now defines ``min``, ``max``, and ``step`` in
+  nanoseconds (:c:type:`uint64_t`) instead of :c:struct:`video_frmival` fractions.
+  :c:func:`video_closest_frmival_stepwise` now takes and returns intervals directly in
+  nanoseconds.
+
 WiFi
 ====
 

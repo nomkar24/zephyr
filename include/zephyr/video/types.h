@@ -325,12 +325,12 @@ struct video_frmival {
  * Used to describe the video frame interval stepwise type.
  */
 struct video_frmival_stepwise {
-	/** minimum frame interval in seconds */
-	struct video_frmival min;
-	/** maximum frame interval in seconds */
-	struct video_frmival max;
-	/** frame interval step size in seconds */
-	struct video_frmival step;
+	/** minimum frame interval in nanoseconds */
+	uint64_t min;
+	/** maximum frame interval in nanoseconds */
+	uint64_t max;
+	/** frame interval step size in nanoseconds */
+	uint64_t step;
 };
 
 /**

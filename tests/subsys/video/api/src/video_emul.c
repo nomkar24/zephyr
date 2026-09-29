@@ -88,7 +88,6 @@ ZTEST(video_common, test_video_frmival)
 	/* Test that every value of the frame interval enumerator can be applied */
 	for (fie.index = 0; video_enum_frmival(imager_dev, &fie) == 0; fie.index++) {
 		struct video_frmival q, a;
-		uint32_t min, max, step;
 
 		zexpect_equal_ptr(fie.format, &fmt, "the format should not be changed");
 		zexpect_true(fie.type == VIDEO_FRMIVAL_TYPE_STEPWISE ||
@@ -96,25 +95,18 @@ ZTEST(video_common, test_video_frmival)
 
 		switch (fie.type) {
 		case VIDEO_FRMIVAL_TYPE_STEPWISE:
-			/* Get everything under the same denominator */
-			q.denominator = fie.stepwise.min.denominator *
-					fie.stepwise.max.denominator *
-					fie.stepwise.step.denominator;
-			min = fie.stepwise.max.denominator * fie.stepwise.step.denominator *
-			      fie.stepwise.min.numerator;
-			max = fie.stepwise.min.denominator * fie.stepwise.step.denominator *
-			      fie.stepwise.max.numerator;
-			step = fie.stepwise.min.denominator * fie.stepwise.max.denominator *
-			       fie.stepwise.step.numerator;
+			q.denominator = NSEC_PER_SEC;
 
 			/* Test every supported frame interval */
-			for (q.numerator = min; q.numerator <= max; q.numerator += step) {
+			for (uint64_t ns = fie.stepwise.min; ns <= fie.stepwise.max;
+			     ns += fie.stepwise.step) {
+				q.numerator = ns;
 				zexpect_ok(video_set_frmival(imager_dev, &q));
 				zexpect_ok(video_get_frmival(imager_dev, &a));
 				zexpect_equal(video_frmival_nsec(&q), video_frmival_nsec(&a),
-					      "query %u/%u (%u nsec) answer %u/%u (%u nsec, sw)",
-					      q.numerator, q.denominator, video_frmival_nsec(&q),
-					      a.numerator, a.denominator, video_frmival_nsec(&a));
+					      "query %u/%u answer %u/%u",
+					      (uint32_t)q.numerator, (uint32_t)q.denominator,
+					      (uint32_t)a.numerator, (uint32_t)a.denominator);
 			}
 			break;
 		case VIDEO_FRMIVAL_TYPE_DISCRETE:

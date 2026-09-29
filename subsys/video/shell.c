@@ -359,11 +359,13 @@ static int video_shell_print_frmival(const struct shell *sh, const struct device
 		case VIDEO_FRMIVAL_TYPE_STEPWISE:
 			shell_print(sh, "\t\t\tInterval: "
 				    "Stepwise: %u ms - %u ms with step %u ms (%u - %u FPS)",
-				    VIDEO_FRMIVAL_MSEC(&fie.stepwise.min),
-				    VIDEO_FRMIVAL_MSEC(&fie.stepwise.max),
-				    VIDEO_FRMIVAL_MSEC(&fie.stepwise.step),
-				    VIDEO_FRMIVAL_FPS(&fie.stepwise.max),
-				    VIDEO_FRMIVAL_FPS(&fie.stepwise.min));
+				    (uint32_t)(fie.stepwise.min / NSEC_PER_MSEC),
+				    (uint32_t)(fie.stepwise.max / NSEC_PER_MSEC),
+				    (uint32_t)(fie.stepwise.step / NSEC_PER_MSEC),
+				    (uint32_t)(fie.stepwise.max != 0U ?
+					       NSEC_PER_SEC / fie.stepwise.max : 0U),
+				    (uint32_t)(fie.stepwise.min != 0U ?
+					       NSEC_PER_SEC / fie.stepwise.min : 0U));
 			break;
 		default:
 			shell_error(sh, "Invalid type 0x%x", fie.type);
