@@ -80,6 +80,21 @@ Build System
   :kconfig:option:`CONFIG_WARN_DEPRECATED` can be used instead, simply replace lines with
   ``CONFIG_DEPRECATION_TEST=y`` with ``CONFIG_WARN_DEPRECATED=n``.
 
+* The hardening tool's data file :file:`scripts/kconfig/hardened.csv` has been replaced by a
+  YAML database: profiles in :file:`scripts/kconfig/hardening.yaml` and per-subsystem
+  ``hardening.yaml`` fragments next to the Kconfig files they relate to. Downstream forks that
+  patched the CSV should migrate their entries to the new format (see :ref:`hardening`); out-of-tree
+  recommendations no longer require patching the in-tree file at all and can instead be provided
+  via ``-DHARDENCONFIG_EXTRA_SOURCES=``. Note that ``CONFIG_DEBUG_COREDUMP`` was listed in the
+  CSV with a syntax error and was silently skipped; it is now actually checked, so
+  ``hardenconfig`` may report it as a new finding. Three CSV entries were dropped rather than
+  migrated: ``CONFIG_STACK_USAGE``, which only produces build-time :file:`.su` files and does not
+  affect the image, and ``CONFIG_MPU_STACK_GUARD`` and ``CONFIG_BUILTIN_STACK_GUARD``, which are
+  mutually exclusive mechanisms arbitrated by :kconfig:option:`CONFIG_HW_STACK_PROTECTION` —
+  recommending both flagged the wrong one on cores with stack pointer limit registers. Enabling
+  :kconfig:option:`CONFIG_HW_STACK_PROTECTION`, which is still recommended, lets the architecture
+  pick.
+
 Kernel
 ******
 
@@ -137,6 +152,32 @@ Kernel
   be used as futex address. The error -EINVAL can no longer happen on futex
   operations.
 
+* The :ref:`object core framework <object_cores_api>` no longer links objects
+  into per-type lists through a node in the object. Statically defined objects
+  are enumerated in place and objects initialized at run time are referenced
+  from a bounded registry sized by
+  :kconfig:option:`CONFIG_OBJ_CORE_MAX_DYNAMIC_OBJECTS`. The ``node`` member of
+  :c:struct:`k_obj_core` and the ``list`` member of :c:struct:`k_obj_type` are
+  removed; tools that walked those lists must use
+  :c:func:`k_obj_type_walk_locked` or :c:func:`k_obj_type_walk_unlocked`.
+  :c:macro:`K_OBJ_TYPE_DEFINE` now defines the :c:struct:`k_obj_type` variable
+  itself, so a separate declaration of that variable must be dropped. Objects
+  located in a thread's stack or in the interrupt stack are no longer
+  registered, and :kconfig:option:`CONFIG_OBJ_CORE` selects
+  :kconfig:option:`CONFIG_THREAD_STACK_INFO`, which adds the stack information
+  fields to every :c:struct:`k_thread`. The new
+  :kconfig:option:`CONFIG_OBJ_CORE_QUEUE`, enabled by default, adds an object
+  core to every :c:struct:`k_queue`; as FIFOs and LIFOs embed a queue, they are
+  reported by both their own object type and the queue type.
+
+* Object tracking (:kconfig:option:`CONFIG_TRACING_OBJECT_TRACKING`) is now
+  provided by the object core framework, which it selects. The
+  ``_track_list_k_*`` list heads, the ``SYS_PORT_TRACK_NEXT()`` macro, the
+  ``sys_track_*_init()`` hooks and the :file:`include/zephyr/tracing/tracking.h`
+  header are removed. Code that walked the tracking lists must use
+  :c:func:`k_obj_type_walk_locked` or :c:func:`k_obj_type_walk_unlocked` with
+  the object type found by :c:func:`k_obj_type_find`.
+
 Boards
 ******
 
@@ -165,6 +206,14 @@ Boards
   The bare ``hazard3``/``m33`` entries in ``soc.yml`` and the corresponding
   ``SOC_RP2350[AB]_HAZARD3``/``_M33`` Kconfig symbols are deprecated and will both be removed in a
   future release.
+
+* :zephyr:board:`rak4631` now supports the WisBlock ecosystem. A WisBlock Base
+  Board shield (e.g. :ref:`rakwireless_rak19007`) is required to expose the
+  sensor and IO slots:
+
+  .. code-block:: shell
+
+     west build -b rak4631/nrf52840 --shield rakwireless_rak19007
 
 * The Kconfig options :kconfig:option:`CONFIG_SRAM_SIZE` and
   :kconfig:option:`CONFIG_SRAM_BASE_ADDRESS` have been deprecated, boards should instead use the
@@ -644,6 +693,10 @@ Controller Area Network (CAN)
   ``can_state_change_callbacks_enabled_t`` as needed. Drivers must now use
   :c:func:`can_fire_state_change_callbacks` for firing CAN controller state change callbacks
   (:github:`117889`).
+
+* The CAN bus network driver (:kconfig:option:`CONFIG_NET_CANBUS`) now defines a network interface
+  for each CAN controller device defined with :c:macro:`CAN_DEVICE_DT_DEFINE` or
+  :c:macro:`CAN_DEVICE_DT_INST_DEFINE`, instead of one for the ``zephyr,canbus`` chosen node.
 
 Counter
 =======
@@ -1662,6 +1715,24 @@ STM32
   own register clock, so ``clocks`` and ``clock-names`` stay on the ``&adcN`` node.
   (:github:`117309`)
 
+* STM32 ADC (:dtcompatible:`st,stm32-adc`): when
+  :kconfig:option:`CONFIG_ADC_STM32_VREFINT_CALIBRATE` is enabled (default
+  whenever an okay :dtcompatible:`st,stm32-vref` node exists),
+  :c:func:`adc_ref_internal` and INTERNAL :c:func:`adc_raw_to_millivolts_dt`
+  results may no longer match DT ``vref-mv`` / 3300 exactly. Disable the
+  Kconfig to keep the previous static DT-only scale.
+
+  ``adc_ref_internal()`` no longer reports the first common block's
+  ``vref-mv`` for every STM32 ADC child. Each child uses its parent common
+  block's ``vref-mv`` (optional, default 3300). This only affects multi-common
+  DTs that set divergent ``vref-mv`` values and relied on the old shared
+  ``DEVICE_API``.
+
+  VREFINT measurement is no longer tied to the first okay
+  :dtcompatible:`st,stm32-vref` node. Any enabled ADC child named by a vref
+  node's ``io-channels`` (including disabled vref nodes) can refresh the
+  shared rail cache. (:github:`117114`)
+
 * :dtcompatible:`st,hci-stm32wba` and :dtcompatible:`st,stm32wba-ieee802154` nodes
   (with nodelabels ``bt_hci_wba`` and ``ieee802154`` respectively) are now
   children of a top-level :dtcompatible:`st,stm32wba-radio` node with nodelabel
@@ -2175,6 +2246,24 @@ Bluetooth HCI
   their data (:c:struct:`bt_hci_driver_data`) and config (:c:struct:`bt_hci_driver_config`)
   structs.
 
+* The HCI driver ``setup()`` op, :c:func:`bt_hci_setup`, :c:struct:`bt_hci_setup_params`,
+  :kconfig:option:`CONFIG_BT_HCI_SETUP` and the ``bt_h4_vnd_setup()`` hook of the H:4 driver are
+  deprecated and will be removed two releases from now. A driver that implements ``setup()``
+  moves that work into :c:member:`bt_hci_driver_api.open`:
+
+  * Send the vendor-specific commands with :c:func:`bt_hci_lockstep_cmd_send_sync`, over the
+    driver's own transport, instead of with the Host's command APIs, and feed every received
+    packet to :c:func:`bt_hci_lockstep_feed`. The helpers of
+    :file:`include/zephyr/bluetooth/hci_pkt.h` frame the commands. After resetting the
+    controller by other means than an HCI command, call :c:func:`bt_hci_lockstep_reset`.
+  * Read the public address with :c:func:`bt_hci_get_public_addr` instead of taking it from
+    :c:member:`bt_hci_setup_params.public_addr`. As there, it is ``BT_ADDR_ANY``, and not
+    ``BT_ADDR_NONE``, when no public address was set.
+  * Remove ``select BT_HCI_SETUP`` from the driver's Kconfig.
+
+  The initialization then also runs in a build without a Host, where ``setup()`` was never
+  called.
+
 * The HCI driver :c:member:`bt_hci_driver_api.open` callback no longer has a ``recv`` parameter;
   rather the common HCI driver layer code takes care of managing this as part of the common
   data struct. There is a new :c:func:`bt_hci_recv` API for drivers to pass data the higher
@@ -2198,6 +2287,15 @@ Bluetooth HCI
   more once ``close()`` has succeeded, and the driver operations other than ``setup()`` do not
   use the Host's HCI command APIs. Out-of-tree HCI drivers, and out-of-tree code that calls
   the HCI driver API directly, may have to be changed to follow these rules.
+
+* An H:4 vendor extension configures its controller from :c:func:`bt_h4_vnd_open`, declared in
+  :zephyr_file:`include/zephyr/drivers/bluetooth/h4.h`, which the H:4 driver calls at the end of
+  its ``open()`` with a lockstep helper for the extension's commands, instead of from
+  ``bt_h4_vnd_setup()`` and the ``setup()`` op. The extension selects
+  :kconfig:option:`CONFIG_BT_H4_VND_OPEN` in place of :kconfig:option:`CONFIG_BT_HCI_SETUP` and
+  reads the public address with :c:func:`bt_hci_get_public_addr` instead of taking it from the
+  setup parameters. ``bt_h4_vnd_setup()`` is still called through the ``setup()`` op by an
+  extension that keeps selecting :kconfig:option:`CONFIG_BT_HCI_SETUP`.
 
 Bluetooth Host
 ==============
@@ -2777,6 +2875,12 @@ MCUmgr
   :kconfig:option:`CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE`, and a larger value now fails at
   configuration time. When the buffer is smaller than 1500 bytes, the MTU now defaults to the
   buffer size instead of 1500.
+
+* :c:func:`smp_client_single_response` takes the SMP transport the response was received on as
+  a new first argument, and ``res_hdr`` must be in host byte order. A response now only
+  completes a pending command that was sent on that transport and has the same group and
+  command ID. Responses from a server that does not echo the group and command ID are ignored,
+  and the command is retried until it times out.
 
 Network buffers
 ===============

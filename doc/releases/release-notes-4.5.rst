@@ -41,11 +41,14 @@ Major enhancements with this release include:
   Zephyr 4.5 adds several new driver APIs, including:
 
   - :ref:`Clock Monitor <clock_monitor_api>` for runtime observation of clock frequency
+  - :ref:`LIN <lin>` for the Local Interconnect Network automotive serial bus
 
 **New subsystems**
 
   Zephyr 4.5 adds several new subsystem APIs, including:
 
+  - :ref:`Precision timing <precision_timing>` for shared checked time arithmetic, clock operations,
+    and PI control
   - :ref:`Video <video_api>` for controlling video drivers
 
 An overview of the changes required or recommended when migrating your application from Zephyr
@@ -310,6 +313,12 @@ Removed APIs and options
 
     * ``stream_flash_erase_page()``
 
+* Tracing
+
+  * The ``_track_list_k_*`` object tracking list heads, ``SYS_PORT_TRACK_NEXT()`` and
+    :file:`include/zephyr/tracing/tracking.h`. Object tracking now enumerates objects through
+    the :ref:`object core framework <object_cores_api>`.
+
 * ZTest
 
     * ``CONFIG_ZTEST_SHUFFLE_SUITE_REPEAT_COUNT``
@@ -340,6 +349,12 @@ Deprecated APIs and options
     user in the tree; HCI transports are regular device drivers. The HCI-based stack,
     :kconfig:option:`CONFIG_BT_HCI`, is the only selection left in the tree; the choice itself
     stays as the extension point for out-of-tree stacks.
+
+  * The HCI driver ``setup()`` op, :c:func:`bt_hci_setup`,
+    :c:struct:`bt_hci_setup_params` and :kconfig:option:`CONFIG_BT_HCI_SETUP` have
+    been deprecated. A driver performs its vendor-specific initialization inside
+    :c:member:`bt_hci_driver_api.open` instead, over its own transport. See the
+    migration guide.
 
 * Build system
 
@@ -526,6 +541,8 @@ New APIs and options
     :c:enumerator:`ADC_REF_INTERNAL` when the callback is NULL.
     :c:func:`adc_raw_to_millivolts_dt` falls back to channel DT
     ``zephyr,vref-mv`` when :c:func:`adc_ref_get` fails.
+  * :kconfig:option:`CONFIG_ADC_STM32_VREFINT_CALIBRATE` (measure VREF+ from
+    VREFINT at init and on ``sequence.calibrate``)
 
 * Architectures
 
@@ -734,6 +751,10 @@ New APIs and options
 
 * Kernel
 
+  * :c:func:`k_obj_core_evict_range`
+  * :kconfig:option:`CONFIG_OBJ_CORE_MAX_DYNAMIC_OBJECTS`
+  * :kconfig:option:`CONFIG_OBJ_CORE_EVICT_ON_FREE`
+  * :kconfig:option:`CONFIG_OBJ_CORE_QUEUE`
   * :c:func:`k_thread_runtime_stats_is_enabled`
   * :c:func:`atomic_test_and_set_bit_to`
   * :c:macro:`K_MSGQ_DEFINE_STATIC`
@@ -745,6 +766,22 @@ New APIs and options
     :c:func:`k_irq_lock`, :c:func:`k_irq_unlock`, :c:func:`k_irq_enable`,
     :c:func:`k_irq_disable`, :c:func:`k_irq_is_enabled`,
     :c:func:`k_irq_connect_dynamic` and :c:func:`k_irq_disconnect_dynamic`
+
+* LIN
+
+  * :c:func:`lin_start`
+  * :c:func:`lin_stop`
+  * :c:func:`lin_configure`
+  * :c:func:`lin_get_config`
+  * :c:func:`lin_send`
+  * :c:func:`lin_receive`
+  * :c:func:`lin_response`
+  * :c:func:`lin_read`
+  * :c:func:`lin_wakeup_send`
+  * :c:func:`lin_set_event_callback`
+  * :c:func:`lin_set_rx_filter`
+  * :c:func:`lin_get_transceiver`
+  * :kconfig:option:`CONFIG_LIN`
 
 * LoRa
 
@@ -861,6 +898,13 @@ New APIs and options
     :kconfig:option:`CONFIG_SNTP_LIB`.
   * Add :c:func:`dns_resolve_is_active` to check whether a DNS resolving
     context is active without reading the context internals.
+  * Add :c:func:`coap_client_reregister_observe` to refresh an ongoing CoAP
+    observation (:rfc:`7641` re-registration) without tearing it down.
+
+* POSIX
+
+  * :kconfig:option:`CONFIG_POSIX_AEP_CHOICE_NETAPP`, a Zephyr-specific subprofile with the
+    features of PSE52 plus the networking interfaces of PSE53, without multi-process support.
 
 * Power Management
 
@@ -906,6 +950,10 @@ New APIs and options
 * USB Type-C
 
   * :kconfig:option:`CONFIG_USBC_LOG_PD_MSG_NAMES`
+
+* Utilities
+
+  * :c:macro:`ARGS_UNUSED` to mark multiple arguments as unused.
 
 * Zbus
 
@@ -1279,6 +1327,7 @@ New Shields
 * :ref:`NXP MX8 DSI OLED1A Panel <nxp_mx8_dsi_oled1a>`
 * :ref:`NXP MX9 DSI OLED Panel <nxp_mx9_dsi_oled>`
 * :ref:`OD-6010 SLCD Panel Shield <od_6010_shield>`
+* :ref:`RAK19007 WisBlock Base Board 2nd Gen <rakwireless_rak19007>`
 * :ref:`Seeed Studio COB LED Driver Board for XIAO <seeed_xiao_cob_led>`
 * :ref:`ST B-M2MEM-PACK1 M.2 serial memory pack <st_b_m2mem_pack1_shield>`
 * :ref:`X-NUCLEO-67W61M1: Wi-Fi 6 expansion board <x_nucleo_67w61m1>`
@@ -1687,6 +1736,10 @@ New Drivers
   * :dtcompatible:`worldsemi,ws2812-bflb-wo` (:github:`105325`)
   * :dtcompatible:`worldsemi,ws2812-pulse-io` (:github:`110466`)
 
+* LIN
+
+  * :dtcompatible:`renesas,ra-lin-sci-b`
+
 * LoRa
 
   * :dtcompatible:`semtech,lr1121` (:github:`109912`)
@@ -1802,6 +1855,7 @@ New Drivers
 
 * PHY
 
+  * :dtcompatible:`lin-transceiver-gpio`
   * :dtcompatible:`st,stm32f7-usbphyc` (:github:`114696`)
   * :dtcompatible:`st,stm32n6-usbphyc` (:github:`114696`)
 
@@ -2013,6 +2067,7 @@ New Samples
 * :zephyr:code-sample:`espnow`
 * :zephyr:code-sample:`fido2`
 * :zephyr:code-sample:`flow-meter`
+* :zephyr:code-sample:`fota-http`
 * :zephyr:code-sample:`frdm-mcxe31b-system-off`
 * :zephyr:code-sample:`i2c-tiny-usb`
 * :zephyr:code-sample:`logging_multidomain`
@@ -2026,6 +2081,8 @@ New Samples
 * :zephyr:code-sample:`nxp_mcx_s2ram`
 * :zephyr:code-sample:`nxp_mcx_system_off`
 * :zephyr:code-sample:`nxp_smartdma_mem_to_mem`
+* :zephyr:code-sample:`object_cores`
+* :zephyr:code-sample:`object_monitor`
 * :zephyr:code-sample:`pm-latency`
 * :zephyr:code-sample:`pulse_io_byte_transfer`
 * :zephyr:code-sample:`qdec_multi`
@@ -2087,6 +2144,13 @@ Libraries / Subsystems
 
   * Added :kconfig:option:`CONFIG_IMG_CUSTOM_SECTOR_SIZE` to allow MCUboot to use a different
     sector size for reducing the swap-using-offset status area size.
+
+* Management
+
+  * Added the :ref:`fota_http` library, a firmware-over-the-air client that
+    downloads an MCUboot image over HTTP or HTTPS straight into the secondary
+    slot, with optional resume, redirect following, SHA-256 verification and a
+    ``fota`` shell command.
 
 * LoRa / LoRaWAN
 
@@ -2176,6 +2240,20 @@ Devicetree
 Other notable changes
 *********************
 
+* ADC
+
+  * STM32 ADC driver (:dtcompatible:`st,stm32-adc`): when
+    :kconfig:option:`CONFIG_ADC_STM32_VREFINT_CALIBRATE` is enabled,
+    :c:func:`adc_ref_internal` may return a measured scale instead of DT
+    ``vref-mv``. Any ADC named by an :dtcompatible:`st,stm32-vref`
+    ``io-channels`` property can take that measurement; the result is
+    cached SoC-wide. See the :ref:`migration guide<migration_4.5>` ADC section.
+
+  * STM32G4 SoC dtsi files now describe the extra VREFINT inputs that exist in
+    silicon: :dtcompatible:`st,stm32-vref` ``vref3`` (ADC3, G491 and up),
+    ``vref4`` and ``vref5`` (ADC4/ADC5, G473 and up). Nodes stay disabled;
+    boards enable the instance they use. ADC2 has no VREFINT mux.
+
 * Bluetooth
 
   * :kconfig:option:`CONFIG_SYSTEM_WORKQUEUE_PRIORITY` is no longer forced to a
@@ -2190,7 +2268,24 @@ Other notable changes
     Ubuntu 24.04 LTS package repositories. See the :ref:`migration guide <migration_4.5>` for
     options if your distribution ships an older version.
 
+  * The :ref:`hardening tool <hardening>` (``west build -t hardenconfig``) now sources its
+    recommendations from a schema-validated YAML database instead of a CSV file: profiles in
+    :file:`scripts/kconfig/hardening.yaml` and per-subsystem ``hardening.yaml`` fragments living
+    next to the Kconfig files they relate to. Every recommendation now carries a rationale,
+    displayed in the report, and may reference CWE/CVE entries; recommendations are grouped into
+    profiles (``base`` and ``strict``, selectable with ``-DHARDENCONFIG_PROFILE=``); integer
+    recommendations can express minimum/maximum constraints; JSON output and a failing exit code
+    are available for CI use; and out-of-tree databases can be layered with
+    ``-DHARDENCONFIG_EXTRA_SOURCES=``. The database is validated in CI against the actual Kconfig
+    tree so entries can no longer go stale.
+
 * Kernel
+
+  * The :ref:`object core framework <object_cores_api>` no longer keeps registry state inside
+    the objects it tracks. Statically defined objects are enumerated in place and objects
+    initialized at run time are referenced from a bounded registry, so a kernel object may be
+    declared on a stack, embedded in freed memory or initialized again without corrupting the
+    registry. Objects in stack storage are not tracked.
 
   * :kconfig:option:`CONFIG_SCHED_CPU_MASK` no longer depends on
     :kconfig:option:`CONFIG_SCHED_SIMPLE`.  CPU affinity masks are now
